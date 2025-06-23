@@ -1555,6 +1555,8 @@ def show_menu():
                     if hovering_back_button == True:
                         menu = 2
         if menu == 4:#任務(對話)
+            hovering_yes_button = is_hovering(340, 460, 500, 570, mouse_x, mouse_y)
+            hovering_no_button = is_hovering(530, 650, 500, 570, mouse_x, mouse_y)
             draw_img(screen, quest_col_img, 0, 450)
             if Quest.next_stage == True and Quest.skippable:
                 if Quest.tracking == 1: Quest_01.stage += 1
@@ -1567,12 +1569,12 @@ def show_menu():
                 Quest.skippable = True
                 draw_color_text(screen, name, 30, 500, 450, GOLD)
                 draw_color_text(screen, subname, 20, 500, 480, GOLD)
-                draw_color_text(screen, dialogue_1, 30, 200, 520, WHITE)
-                draw_color_text(screen, dialogue_2, 30, 200, 550, WHITE)
-            def choice_dialogue(screen, dialogue_1 = "", dialogue_2 = ""):
+                draw_color_text(screen, dialogue_1, 30, 500, 520, WHITE)
+                draw_color_text(screen, dialogue_2, 30, 500, 550, WHITE)
+            def choice_dialogue(dialogue_1 = "", dialogue_2 = ""):
                 Quest.skippable = True
-                draw_color_text(screen, dialogue_1, 30, 200, 450, GOLD)
-                draw_color_text(screen, dialogue_2, 20, 200, 480, GOLD)
+                draw_color_text(screen, dialogue_1, 30, 500, 450, GOLD)
+                draw_color_text(screen, dialogue_2, 20, 500, 480, GOLD)
                 draw_img(screen, button_yes_img, 340, 500)
                 draw_img(screen, button_no_img, 530, 500)
             #任務
@@ -1940,10 +1942,10 @@ def show_menu():
                     normal_dialogue(Player.name, "冒險者", "保重，我們一定還會再見的。")
                 if Quest_03.stage == 43:
                     title("星疫之災", "主線任務已完成")
-                    player.gain_item([0, 4], 1)
-                    player.gain_item([3, 0], 150)
-                    player.gain_item([6, 2], 1)
-                    player.gain_item([6, 3], 1)
+                    player.gain_item("銀月之刃", 1)
+                    player.gain_item("金幣", 150)
+                    player.gain_item("力量水晶", 1)
+                    player.gain_item("極光之翼", 1)
                     new_message("全職業經驗 + 500")
                     Assassin.xp += 500
                     Archer.xp += 500
@@ -2040,8 +2042,6 @@ def show_menu():
                     waiting = False
                     return False
             pygame.display.update()
-            hovering_yes_button = is_hovering(340, 460, 500, 570, mouse_x, mouse_y)
-            hovering_no_button = is_hovering(530, 650, 500, 570, mouse_x, mouse_y)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
