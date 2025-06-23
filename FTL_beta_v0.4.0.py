@@ -1407,6 +1407,8 @@ def default():
     Player.cooldowns["苦無"] = 0
     Player.cooldowns["隕石"] = 0
     Player.cooldowns["瞬水爆"] = 0
+    player.flying = False
+    Player_location.dash_distance = 0
     Player_location.disable_move = False
     Player_location.disable_jump = False
     Player_location.disable_ground = False
@@ -5875,7 +5877,7 @@ Trade.shops = {
                 {"name":"中階空刃護符", "count":1, "cost":{"初階空刃護符": 2, "金幣": 30, "樹枝":5}, "total_limit":-1, "limit":-1},
                 {"name":"高階空刃護符", "count":1, "cost":{"中階空刃護符":2, "金幣":50, "樹枝":10}, "total_limit":-1, "limit":-1}],
             "烘焙商人":
-                [{"name":"蜂蜜麵包", "count":3, "cost":{"金幣":40}, "total_limit":-1, "limit":-1},
+                [{"name":"蜂蜜麵包", "count":3, "cost":{"金幣":20}, "total_limit":-1, "limit":-1},
                 {"name":"微風薄餅", "count":1, "cost":{"金幣":10}, "total_limit":-1, "limit":-1},
                 {"name":"秋日餽贈", "count":1, "cost":{"金幣":500}, "total_limit":1, "limit":1}]
             }
@@ -6104,7 +6106,9 @@ while running:
             teleport(Areas.spawnpoint)
         elif Areas.area == -7 and Depth.score > 0:
             Depth.location = 16
-        if Area16.ascension_distant < 1500: Area16.ascension_distant = 0
+        if Area16.ascension_distant < 1500:
+            Quest_03.stage = 6
+            Area16.ascension_distant = 0
         All_mobs.kill = True
         All_mobs.remove_lootchest = True
         Areas.spawn = True
@@ -6470,16 +6474,15 @@ while running:
             if Area7.wave == 1 and Areas.cleared[7] == False:
                 title("Wave 1", " ")
                 summon_mob(player.rect.x - (Player_location.coord_x - 6150), GROUND - 30, 3, 7, "slime")
-                summon_mob(player.rect.x - (Player_location.coord_x - 6250), GROUND - 30, 5, 7, "skeleton")
+                summon_mob(player.rect.x - (Player_location.coord_x - 6250), GROUND - 30, 3, 7, "skeleton")
                 Areas.spawn = False
         if Area7.w_clock == 0 and Area7.wave_clear:
             if Area7.wave == 2 and Areas.cleared[7] == False:
-                summon_mob(player.rect.x - (Player_location.coord_x - 6250), GROUND - 30, 5, 7, "skeleton")
-                summon_mob(player.rect.x - (Player_location.coord_x - 6350), GROUND - 30, 5, 7, "skeleton")
-                summon_mob(player.rect.x - (Player_location.coord_x - 6450), GROUND - 30, 3, 7, "slime")
+                summon_mob(player.rect.x - (Player_location.coord_x - 6150), GROUND - 30, 4, 7, "slime")
+                summon_mob(player.rect.x - (Player_location.coord_x - 6350), GROUND - 30, 4, 7, "zombie")
                 Area7.wave_clear = False
             if Area7.wave == 3 and Areas.cleared[7] == False:
-                summon_mob(player.rect.x - (Player_location.coord_x - 6350), GROUND - 30, 5, 7, "zombie")
+                summon_mob(player.rect.x - (Player_location.coord_x - 6250), GROUND - 30, 4, 7, "skeleton")
                 summon_mob(player.rect.x - (Player_location.coord_x - 6450), GROUND - 50, 4, 7, "tree_monster")
                 Area7.wave_clear = False
         #攻略判定
