@@ -71,7 +71,7 @@ try:
 except:
     None
 #全螢幕
-FULLSCREEN = True
+FULLSCREEN = False
 if FULLSCREEN:
     info = pygame.display.Info()
     SCREEN_WIDTH, SCREEN_HEIGHT = info.current_w, info.current_h
@@ -667,7 +667,7 @@ def outline_text(text, size, x, y, color):
     screen.blit(outline, (x, y))
 #NPC
 def summon_npc(coord_x, y, interactions, name, img):
-    coord_x = player.rect.x - (Player_location.coord_x - coord_x)
+    coord_x = fixed_coord_x(coord_x)
     draw_color_text(screen,f"[{name}]", 20, coord_x, y - 40 , LBLUE)
     draw_img(screen, img, coord_x - img.get_width() / 2, y)
     if abs(player.rect.x - (coord_x + 80 - img.get_width() / 2)) <= 80:
@@ -754,18 +754,18 @@ def draw_boss_health(surf, hp, limit, color, name, subname, effect, weakness, de
             e_move += 50
 #進度條(任意)
 def progress_bar(progress, max_progress, name, subname, unit, namecolor, subnamecolor, barcolor):
-    draw_color_text(screen, str(name), 40, 500, 10, namecolor)
-    draw_color_text(screen, str(subname), 30, 500, 55, subnamecolor)
+    draw_color_text(screen, str(name), 30, 500, 10, namecolor)
+    draw_color_text(screen, str(subname), 20, 500, 45, subnamecolor)
     BAR_LENGTH = 500
-    BAR_HEIGHT = 30
+    BAR_HEIGHT = 20
     fill = (progress / max_progress) * BAR_LENGTH
-    outline_rect = pygame.Rect(250, 90, BAR_LENGTH, BAR_HEIGHT)
-    fill_rect = pygame.Rect(250, 90, fill, BAR_HEIGHT)
-    fill_rect_2 = pygame.Rect(250, 90, BAR_LENGTH, BAR_HEIGHT)
+    outline_rect = pygame.Rect(250, 80, BAR_LENGTH, BAR_HEIGHT)
+    fill_rect = pygame.Rect(250, 80, fill, BAR_HEIGHT)
+    fill_rect_2 = pygame.Rect(250, 80, BAR_LENGTH, BAR_HEIGHT)
     pygame.draw.rect(screen, GRAY, fill_rect_2)
     pygame.draw.rect(screen, barcolor, fill_rect)
     pygame.draw.rect(screen, BLACK, outline_rect, 2)
-    draw_color_text(screen, str(math.ceil(progress)) + "/" + str(max_progress) + unit, 30, 500, 85, BLACK)
+    draw_color_text(screen, str(math.ceil(progress)) + "/" + str(max_progress) + unit, 15, 500, 78, BLACK)
 #怪物技能提示條
 def mob_skill_bar(x, y, name, time, total_time):
     BAR_LENGTH = 80
@@ -1197,18 +1197,18 @@ def calculate_sky_color(time, start_color, end_color):
         )
 #滾動式背景
 def scrolling_background(first_load = False):
-    global background_backward_img, background_img, background_forward_img
+    global background_backward_img, background_img, background_forward_img, player_move_count_temp
     #初次執行
     if first_load:
         Areas.changed = True
         global background_location_x, background_location_y
         background_location_x = 0
         background_location_y = 0
+        player_move_count_temp = 0
     #檢測更換區域
-    area_temp = Areas.area
-    #當前區域
-    Areas.area = (Player_location.coord_x // 1000) + 1
-    if area_temp != Areas.area:
+    new_area = (Player_location.coord_x // 1000) + 1
+    if Areas.area != new_area:
+        Areas.area = new_area
         Areas.lock_right = False
         Areas.lock_left = False
         Areas.changed = True
@@ -1227,28 +1227,29 @@ def scrolling_background(first_load = False):
         Areas.special_area = ""
     #導入背景圖片 前/中/後
     Areas.area = int(Areas.area)
-    if Areas.area < Areas.areas + 1 and Areas.changed and Areas.lock_right == False:
+    if Areas.area < Areas.areas and Areas.changed and not Areas.lock_right:
         background_forward_img = area_background_imgs[str(Areas.area + 1)]
     if Areas.area < Areas.areas and Areas.changed:
         background_img = area_background_imgs[str(Areas.area) + Areas.special_area]
-    if Areas.changed and Areas.lock_left == False:
+    if Areas.changed and not Areas.lock_left:
         background_backward_img = area_background_imgs[str(Areas.area - 1)]
     Areas.changed = False
     #當前區域座標
     global current_coord_x
     current_coord_x = Player_location.coord_x - (Areas.area - 1) * 1000
+    #移動怪物
+    if not Player_location.player_move:
+        All_mobs.coord_x = player_move_count_temp - Player_location.coord_x
+    player_move_count_temp = Player_location.coord_x
     #計算背景位置
     if (Areas.lock_left and current_coord_x <= 500) or (Areas.lock_right and current_coord_x >= 500) or (Areas.lock_left and Areas.lock_right):
         background_location_x = 0
         Player_location.player_move = True
-    if ((Areas.lock_left and current_coord_x > 500) or (Areas.lock_right and current_coord_x < 500) or (Areas.lock_right == False and Areas.lock_left == False)) and not (Areas.lock_left and Areas.lock_right):
+        player.rect.x = current_coord_x
+    elif ((Areas.lock_left and current_coord_x > 500) or (Areas.lock_right and current_coord_x < 500) or (Areas.lock_right == False and Areas.lock_left == False)) and not (Areas.lock_left and Areas.lock_right):
         background_location_x = -(Player_location.coord_x - ((Areas.area - 1) * 1000) - 500 - Player_location.background_moving)
         Player_location.player_move = False
-    #使玩家在畫面中央
-    if Player_location.player_move == False and Areas.lock_right == False and Areas.lock_left == False and Areas.area != 17:
         player.rect.x = 500
-    if Areas.lock_left and Areas.lock_right:
-        player.rect.x = current_coord_x
     #畫出天空
     Game_time.minute += 1
     Game_time.hour += 1/3600 * (1) #日夜循環速度
@@ -1296,11 +1297,11 @@ def circle_cd_indicator(x, y, radius, time, total_time, thickness, color = GREEN
     pygame.draw.arc(screen, color, rect, math.radians(start_angle), math.radians(end_angle), thickness)
 #傳送
 def teleport(coord_x):
-    if (Areas.lock_left and coord_x % 1000 <= 500) or (Areas.lock_right and coord_x % 1000 > 500):
-        player.rect.centerx = coord_x % 1000
-    else:
-        All_mobs.coord_x += (Player_location.coord_x - coord_x)
     Player_location.coord_x = coord_x
+#修正座標
+def fixed_coord_x(coord_x):
+    fix = (int(Player_location.dash_distance > 0) - int(Player_location.dash_distance < 0)) * 30
+    return player.rect.x - (Player_location.coord_x - coord_x - fix)
 #偵測鼠標懸停(長方形)
 def is_hovering(x1, x2, y1, y2, mouse_x = 0, mouse_y = 0, mouse_icon = ""):
     if x1 < Mouse.x < x2 and y1 < Mouse.y < y2 and mouse_icon:
@@ -1413,6 +1414,8 @@ def default():
     Player_location.disable_jump = False
     Player_location.disable_ground = False
     Player_location.anti_gravity = False
+    All_mobs.count = 0
+    Area18.stellaris_phase = 0
 #選單
 def show_menu():
     forge_tick = 0
@@ -3306,29 +3309,13 @@ class Player(pygame.sprite.Sprite):
         self.move_distant = max(self.speed, 0)
         if key_pressed[pygame.K_d] and Player_location.disable_move == False and Player_location.dash_distance == 0:
             self.facing = 1
-            if Player_location.player_move: player.rect.x += self.move_distant
-            else: All_mobs.coord_x -= self.move_distant
-            Player_location.coord_x += self.move_distant
-            if player.rect.right + self.move_distant > WIDTH - 1:
-                player.rect.right = WIDTH - 1
-                Player_location.coord_x = Areas.area * 1000 - 1
+            if player.rect.right + self.move_distant <= WIDTH: Player_location.coord_x += self.move_distant
         if key_pressed[pygame.K_a] and Player_location.disable_move == False and Player_location.dash_distance == 0:
             self.facing = -1
-            if Player_location.player_move: player.rect.x -= self.move_distant
-            else: All_mobs.coord_x += self.move_distant
-            Player_location.coord_x -= self.move_distant
-            if player.rect.left - self.move_distant < 0:
-                player.rect.left = 0
-                Player_location.coord_x = (Areas.area - 1) * 1000
-        if self.rect.right > WIDTH: self.rect.right = WIDTH
-        if self.rect.left < 0: self.rect.left = 0
+            if player.rect.left - self.move_distant >= 0: Player_location.coord_x -= self.move_distant
         #11區移動
         if Area11.x_velocity > 1:
-            if Player_location.player_move:
-                player.rect.x += 10
-            else: All_mobs.coord_x -= 10
             Player_location.coord_x += 10
-            player.rect.x += 10
             Area11.x_velocity -= 10
         if Area11.y_velocity > 1:
             Player_location.anti_gravity = True
@@ -3386,8 +3373,6 @@ class Player(pygame.sprite.Sprite):
         if skill == "archer_main_attack" or skill == "苦無": Archer.focus = min(Archer.focus + 1, Archer.focus_limit)
         if skill == "火焰箭矢": Archer.focus = 0
         if skill == "mage_ultimate_target":
-            tp_location = Mouse.x - player.rect.x
-            teleport(Player_location.coord_x + tp_location)
             self.rect.y = Mouse.y
             Player.cooldowns["mage_water_burst"] = 120 + A_tree.mage["水爆延長"] * 120
             Mage.mana = min(Mage.mana + 30, Mage.mana_limit)
@@ -3395,7 +3380,7 @@ class Player(pygame.sprite.Sprite):
             self.weapon = 1
             Assassin.magic_enchant = 1.2
             self.attack_code = -~ self.attack_code
-            water_burst = Water_burst(player.rect.x, Mouse.y + 200, self.attack_code)
+            water_burst = Water_burst(Mouse.x, Mouse.y + 200, self.attack_code)
             all_sprites.add(water_burst)
             water_bursts.add(water_burst)
     #普通攻擊
@@ -3538,7 +3523,7 @@ class Player(pygame.sprite.Sprite):
     #終結技
     def ultimate(self):
         if Mage.ultimate == True: self.attack_feedback("mage_ultimate_target")
-        if self.weapon == 1 and Mage.ultimate == False and A_tree.rogue["暗影襲擊"] > 0 and Player.cooldowns["rogue_riptide"] > 0 and Player.cooldowns["暗影襲擊"] == 0 and Assassin.ultimate_time == 0 and All_mobs.nearest_x != -1:#暗影襲擊:激流狀態下才可使用，傳送到最近敵人，角色獲得重擊狀態(次數=激流狀態剩餘秒數、傷害=20)
+        elif self.weapon == 1 and Mage.ultimate == False and A_tree.rogue["暗影襲擊"] > 0 and Player.cooldowns["rogue_riptide"] > 0 and Player.cooldowns["暗影襲擊"] == 0 and Assassin.ultimate_time == 0 and All_mobs.nearest_x != -1:#暗影襲擊:激流狀態下才可使用，傳送到最近敵人，角色獲得重擊狀態(次數=激流狀態剩餘秒數、傷害=20)
             Player.cooldowns["暗影襲擊"] = 600 + A_tree.rogue["暗影襲擊降低冷卻"] * 300
             teleport(All_mobs.nearest_x)
             Player.cooldowns["rogue_skill_time"] = 0
@@ -3547,7 +3532,7 @@ class Player(pygame.sprite.Sprite):
             Player.cooldowns["rogue_riptide"] = 0
             player.main_attack()
             Player.cooldowns["暗影襲擊剩餘時間"] = 600
-        if self.weapon == 2 and A_tree.archer["苦無"] > 0 and Mage.ultimate == False:
+        elif self.weapon == 2 and A_tree.archer["苦無"] > 0 and Mage.ultimate == False:
             if Archer.kunai_amount > 0 and Player.cooldowns["苦無"] != 0:
                 self.attack_code = -~ self.attack_code
                 shoot_arrow(self.rect.centerx, self.rect.centery + 20, self.facing, "kunai")
@@ -3562,7 +3547,7 @@ class Player(pygame.sprite.Sprite):
                 Archer.kunai_amount = math.ceil(Archer.focus) + 1
                 Archer.focus = 0
             if Archer.kunai_amount == 0: Player.cooldowns["苦無剩餘時間"] = 0
-        if self.weapon == 3 and A_tree.mage["瞬水爆"] > 0 and Mage.ultimate == False and Player.cooldowns["瞬水爆"] == 0 and Mage.mana > Stats.total["魔力上限"] / 2 and Mage.ultimate == False: #瞬水爆:傳送到滑鼠位置，造成水爆領域，持續2秒，切換成近戰狀態，魔力+30，每秒燒10魔力(燒完或切武器停止)，魔力消耗:50
+        elif self.weapon == 3 and A_tree.mage["瞬水爆"] > 0 and Mage.ultimate == False and Player.cooldowns["瞬水爆"] == 0 and Mage.mana > Stats.total["魔力上限"] / 2 and Mage.ultimate == False: #瞬水爆:傳送到滑鼠位置，造成水爆領域，持續2秒，切換成近戰狀態，魔力+30，每秒燒10魔力(燒完或切武器停止)，魔力消耗:50
             Mage.mana -= Stats.total["魔力上限"] // 2
             Player.cooldowns["瞬水爆"] = 1800
             Mage.ultimate = True
@@ -3888,9 +3873,7 @@ class Mob(pygame.sprite.Sprite):
         if self.fly == False and self.rect.y < self.ground: self.rect.y = min(self.rect.y + 5, self.ground)
         #怪物傳送(座標)
         def mob_teleport(coord_x):
-            if self.rect.x > player.rect.x: fix = 395
-            else: fix = 0
-            self.rect.x += (coord_x - Player_location.coord_x) + player.rect.x - self.rect.x + fix
+            self.rect.x += coord_x - self.coord_x
         #獲得狀態
         def get_effect(effect, tick):
             if self.effect[effect] < tick and self.rank != "skill": self.effect[effect] = tick
@@ -3920,7 +3903,7 @@ class Mob(pygame.sprite.Sprite):
                 elif self.type != "Stellaris" or Area18.stellaris_phase == 2 :
                     self.health -= total
                     self.tracking_range = 1000
-                if total != 0 and (self.active_skills["核心暴露"] or self.type != "Stellaris"): summon_dmg_indicator(self.rect.x, self.rect.y, type, (total))
+                if total != 0 and ((self.active_skills["核心暴露"] or Area18.stellaris_phase == 2) and self.type == "Stellaris"): summon_dmg_indicator(self.rect.x, self.rect.y, type, (total))
         #擊退
         def knockback(distance):
             if self.rank != "skill":
@@ -3962,7 +3945,7 @@ class Mob(pygame.sprite.Sprite):
         if self.active_skills["星疫蔓延"]:
             new_boss_skill_bar("星疫蔓延", self.blight_spread_time, 180)
             self.blight_spread_time += 1
-            draw_img(screen, aurora_skill_1, player.rect.x - (Player_location.coord_x - 17010), 470)
+            draw_img(screen, aurora_skill_1, fixed_coord_x(17010), 470)
             if self.blight_spread_time == 1: new_dialogue("星疫無所不在，你們將葬身於此!", "", "Stellaris", "星辰令使")
             if self.blight_spread_time < 120: self.blight_spread_distant = min(self.blight_spread_distant + 10, (1000 - self.health))
             if self.blight_spread_time == 120: new_dialogue("星疫擴散了，別慌!站在魔法陣裡並接受治癒!", "", "Aurora", "魔法師")
@@ -4044,7 +4027,6 @@ class Mob(pygame.sprite.Sprite):
             if self.distorting_fate_time == 30:
                 new_dialogue("你，加入我的行列!", "", "Stellaris", "星辰令使")
                 teleport(18150)
-                mob_teleport(17690 + 500 - Area18.blight_area)
             if self.distorting_fate_time > 30:
                 draw_img(screen, aurora_skill_1, player.rect.x - (Player_location.coord_x - 17010), 470)
                 new_boss_skill_bar("前往NPC處並接受淨化", self.distorting_fate_time, 210)
@@ -4420,6 +4402,7 @@ class Mob(pygame.sprite.Sprite):
                 self.active_skills["核心暴露"] = True
                 self.core_open_by_npc_ability = True
             #第0階段:
+            if self.time == 1: mob_teleport(17690 + 500 - Area18.blight_area)
             if Area18.stellaris_phase == 0 and self.time == 180:
                 self.can_skill = True
                 Area18.stellaris_phase = 1
@@ -4428,6 +4411,8 @@ class Mob(pygame.sprite.Sprite):
                 if self.active_skills["逆轉命運"] or self.active_skills["星疫蔓延"] or self.active_skills["收集星輝"] or self.active_skills["守護Tuleen"] or self.active_skills["核心暴露"] or self.active_skills["星疫雷射"]: self.skills = {"星疫蔓延":0, "星界降臨":25, "星疫孵化":25, "星疫雷射":25, "殞命刺擊":0, "星疫隕石":25, "逆轉命運":0, "核心暴露":0}
                 else: self.skills = {"星疫蔓延":10, "星界降臨":15, "星疫孵化":10, "星疫雷射":10, "殞命刺擊":10, "星疫隕石":15, "逆轉命運":10, "核心暴露":10, "收集星輝":5, "守護Tuleen":5}
                 if self.health <= 0:
+                    Area18.boss_claim_area = 0
+                    mob_teleport(18300)
                     new_dialogue("如果我快死了，我將帶上他們!", "", "Stellaris", "星辰令使")
                     self.image = stellaris_3_img
                     self.can_skill = False
@@ -4946,6 +4931,7 @@ class Water_burst(pygame.sprite.Sprite):
         self.code = code
         self.rect.centerx = x
         self.rect.bottom = y
+        teleport(Player_location.coord_x + (self.rect.centerx - player.rect.centerx))
     def update(self):
         self.rect.x += All_mobs.coord_x
         player.attack(self.rect.centerx, self.rect.centery, 150, 2 * Stats.total["攻擊力"] * (1 + Stats.total["攻擊力%"] / 100), 1, self.code, "mage_ultimate_water_burst", 5, [0, 0, 0], [None], [0])
@@ -6031,7 +6017,7 @@ while running:
         if (press_button[2]) and Player.cooldowns["dash"] == 0 and Player_location.disable_move == False and Player_location.midair_dash and player.holding["food"] == 0:
             Player_location.midair_dash -= 1
             Player.cooldowns["dash"] += 20
-            Player_location.dash_distance += player.facing * 300
+            Player_location.dash_distance = player.facing * 300
     #等級
     Assassin.xp_req = Assassin.level * 10 + 10
     Archer.xp_req = Archer.level * 10 + 10
@@ -6088,10 +6074,9 @@ while running:
         if player.facing == 1: draw_img(screen, player_dash_right_img, player.rect.centerx - 80, player.rect.y + 120)
         if player.facing == -1: draw_img(screen, player_dash_left_img, player.rect.centerx, player.rect.y + 120)
         Damage_to_player.damage = 0
-        if player.facing == 1 and not (Areas.lock_right and current_coord_x + 30 > 1000): teleport(Player_location.coord_x + 30 * player.facing)
-        elif player.facing == -1 and not (Areas.lock_left and current_coord_x - 30 < 0): teleport(Player_location.coord_x + 30 * player.facing)
+        if not (player.rect.right + 30 >= WIDTH or player.rect.left - 30 <= 0): Player_location.coord_x += (30 * player.facing)
         Player_location.dash_distance -= 30 * player.facing
-        if Player_location.dash_distance > 300 or Player_location.dash_distance < -300: Player_location.dash_distance = 0
+        if Player_location.dash_distance >= 300 or Player_location.dash_distance <= -300: Player_location.dash_distance = 0
     if time < 60:
         time += 1
     else:
@@ -6106,7 +6091,7 @@ while running:
             teleport(Areas.spawnpoint)
         elif Areas.area == -7 and Depth.score > 0:
             Depth.location = 16
-        if Area16.ascension_distant < 1500:
+        if Area16.ascension_distant < 1500 and Quest_03.stage < 12:
             Quest_03.stage = 6
             Area16.ascension_distant = 0
         All_mobs.kill = True
@@ -6130,7 +6115,7 @@ while running:
             Areas.mob_killed[areas] = False
     #區域攻略檢測
     skip_areas = [-5, 0, 7, 8, 9, 10, 16]
-    if Areas.lootchest[Areas.area] == 0 and Areas.area not in skip_areas: Areas.cleared[Areas.area] = True
+    if Areas.area not in skip_areas and Areas.lootchest[Areas.area] == 0: Areas.cleared[Areas.area] = True
     if 0 < Areas.area < 11:
         if Areas.first["破曉平原"]:
             title("發現區域 - 破曉平原")
@@ -6253,7 +6238,6 @@ while running:
             Depth.room = 10
             summon_mob(500, 400, 20, -7, "Samwell Calder")
             #測試結束
-        
         if Depth.start:
             load_depth()
             Depth.start = False
@@ -6753,12 +6737,12 @@ while running:
     if Areas.area == 18 or Areas.area == 19:#星界聖域1
         #常駐事件
         #顯示NPC
-        draw_img(screen, aurora_2_img, player.rect.x - (Player_location.coord_x - 17010), GROUND - 120)
-        draw_img(screen, tuleen_img, player.rect.x - (Player_location.coord_x - 17200), GROUND - 120)
-        draw_color_text(screen, "[Aurora]", 20, player.rect.x - (Player_location.coord_x - 17080), GROUND - 150, LBLUE)
-        draw_color_text(screen, "[Tuleen]", 20, player.rect.x - (Player_location.coord_x - 17250), GROUND - 150, RED)
+        draw_img(screen, aurora_2_img, fixed_coord_x(17010), GROUND - 120)
+        draw_img(screen, tuleen_img, fixed_coord_x(17200), GROUND - 120)
+        draw_color_text(screen, "[Aurora]", 20, fixed_coord_x(17080), GROUND - 150, LBLUE)
+        draw_color_text(screen, "[Tuleen]", 20, fixed_coord_x(17250), GROUND - 150, RED)
         if Player_location.coord_x < 17100 and Quest_03.stage != 31:
-            draw_img(screen, button_use_img, player.rect.x - (Player_location.coord_x - 17040), 250)
+            draw_img(screen, button_use_img, fixed_coord_x(17040), 250)
             if Areas.use:
                 if All_mobs.boss_fight_active:
                     new_dialogue("現在可不是閒聊的時候! 我們還得對付令使!", "", "Aurora", "魔法師")
@@ -6772,7 +6756,7 @@ while running:
         def summon_stellaris():
             All_mobs.boss_fight_active = True
             Area18.boss_summoned = True
-            summon_mob(player.rect.x - (Player_location.coord_x - 17600), -100, 20, 18, "Stellaris")
+            summon_mob(fixed_coord_x(17600), -100, 20, 18, "Stellaris")
             switch_music(11)
         if Area18.first_beat_boss and Player_location.coord_x > 17400 and Area18.boss_summoned == False and Quest_03.stage == 31: summon_stellaris()
         if All_mobs.boss_fight_active and Areas.area == 18: Areas.lock_left = True
@@ -6784,8 +6768,6 @@ while running:
         #佔領進度
         if All_mobs.boss_fight_active and Area18.stellaris_phase != 2:
             progress_bar(Area18.blight_area // 10, 1000 // 10, "Stellaris", "星辰令使", "%", TEAL, PURPLE, BLUE)
-            draw_img(screen, aurora_2_img, player.rect.x - (Player_location.coord_x - 17010), GROUND - 120)
-            draw_img(screen, tuleen_img, player.rect.x - (Player_location.coord_x - 17200), GROUND - 120)
         #每次觸發事件
         if Areas.spawn:
             Area18.boss_summoned = False
