@@ -71,7 +71,7 @@ try:
 except:
     None
 #全螢幕
-FULLSCREEN = False
+FULLSCREEN = True
 if FULLSCREEN:
     info = pygame.display.Info()
     SCREEN_WIDTH, SCREEN_HEIGHT = info.current_w, info.current_h
@@ -1414,7 +1414,6 @@ def default():
     Player_location.disable_jump = False
     Player_location.disable_ground = False
     Player_location.anti_gravity = False
-    All_mobs.count = 0
     Area18.stellaris_phase = 0
 #選單
 def show_menu():
@@ -4577,13 +4576,13 @@ class Mob(pygame.sprite.Sprite):
         #非玩家擊敗
         if (self.type not in keeping_monsters and self.area != Areas.area) or All_mobs.kill:
             self.kill()
-            if self.rank != "skill": All_mobs.count -= 1
+            if self.rank != "skill": All_mobs.count = max(All_mobs.count - 1, 0)
         #被玩家擊敗
         if self.health <= 0 or (self.rank != "boss" and (self.health / self.health_limit <= 0.1) and A_tree.rogue["無聲絞喉"]):
             if (self.rank != "boss" and (0 < self.health / self.health_limit <= 0.1) and A_tree.rogue["無聲絞喉"] and player.weapon == 1):
                 summon_dmg_indicator(self.rect.x, self.rect.y, 0, "Executed")
             self.kill()
-            if self.rank != "skill": All_mobs.count -= 1
+            if self.rank != "skill": All_mobs.count = max(All_mobs.count - 1, 0)
             All_mobs.nearest_x = -1
             #擊敗敵人觸發技能
             if A_tree.rogue["次元斬 I"] and player.weapon == 1:
@@ -6091,7 +6090,7 @@ while running:
             teleport(Areas.spawnpoint)
         elif Areas.area == -7 and Depth.score > 0:
             Depth.location = 16
-        if Area16.ascension_distant < 1500 and Quest_03.stage < 12:
+        if Area16.ascension_distant < 1500 and 6 < Quest_03.stage < 12:
             Quest_03.stage = 6
             Area16.ascension_distant = 0
         All_mobs.kill = True
