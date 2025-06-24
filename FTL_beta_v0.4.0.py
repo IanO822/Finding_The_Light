@@ -937,10 +937,11 @@ def remove_zero(arr):
     return arr
 #裝備物品
 def equip_item(item, item_type, charm_slot_cost = 0):
-    if item_type not in ["charm", "consumable", "questItem"]:
-        if item["name"] == Inv.equip[item_type]: Inv.equip[item_type] = ""
-        else: Inv.equip[item_type] = item["name"]
-    if item_type == "consumable":
+    if item_type not in ["sword", "bow", "wand" ,"charm", "consumable", "questItem"]:
+        pass
+    elif item_type in ["sword", "bow", "wand"]:
+        Inv.equip[item_type] = item["name"]
+    elif item_type == "consumable":
         if is_item_equipped(item):
             Inv.equip["hotbar"].remove(item["name"])
         elif len(Inv.equip["hotbar"][1:]) < 4:
@@ -5695,7 +5696,7 @@ Player.name = "Player"
 Inv.open = False
 Inv.cate = 1
 Inv.use = False
-Inv.equip = {"sword":"", "bow":"", "wand":"", "helmet":"", "armor":"", "legs":"", "boots":"", "charm":[], "questItem":[], "hotbar":[""]}
+Inv.equip = {"sword":"粗鐵劍", "bow":"木製弓", "wand":"基礎魔杖", "helmet":"", "armor":"", "legs":"", "boots":"", "charm":[], "questItem":[], "hotbar":["粗鐵劍"]}
 Inv.charm_slot = [0, 3]
 Inv.showing_charm = {"name":[], "img":[], "count":[]}
 Inv.invload = []
@@ -5883,6 +5884,7 @@ hovering_s_skill = False
 hovering_q_skill = False
 background_location_x = 0
 first_time_load_scrolling_background = True
+player_move_count_temp = 0
 hotbar_index_temp = True
 #進入遊戲位置
 teleport(0)
