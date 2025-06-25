@@ -3900,10 +3900,10 @@ class Mob(pygame.sprite.Sprite):
                 #星辰令使核心暴露
                 if self.active_skills["核心暴露"] and self.type == "Stellaris":
                     self.core_health -= total
-                elif self.type != "Stellaris" or Area18.stellaris_phase == 2 :
+                elif self.type != "Stellaris" or Area18.stellaris_phase == 2:
                     self.health -= total
                     self.tracking_range = 1000
-                if total != 0 and ((self.active_skills["核心暴露"] or Area18.stellaris_phase == 2) and self.type == "Stellaris"): summon_dmg_indicator(self.rect.x, self.rect.y, type, (total))
+                if total != 0 and (self.active_skills["核心暴露"] or Area18.stellaris_phase == 2 or self.type != "Stellaris"): summon_dmg_indicator(self.rect.x, self.rect.y, type, (total))
         #擊退
         def knockback(distance):
             if self.rank != "skill":
