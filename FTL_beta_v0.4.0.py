@@ -278,6 +278,9 @@ blight_bomb_img.set_colorkey(GREEN)
 blight_bomb_explode_img.set_colorkey(GREEN)
 blight_meteor_img.set_colorkey(GREEN)
 grasp_of_the_depth_img.set_colorkey(GREEN)
+#地圖物件
+campfire_img = pygame.image.load(os.path.join("resource", "campfire.png")).convert()
+campfire_img.set_colorkey(GREEN)
 #NPC圖片
 #任務「星疫之災」
 aurora_1_img = pygame.image.load(os.path.join("resource", "aurora_1.png")).convert()
@@ -666,9 +669,9 @@ def outline_text(text, size, x, y, color):
     outline.blit(text_surface, (2, 2))
     screen.blit(outline, (x, y))
 #NPC
-def summon_npc(coord_x, y, interactions, name, img):
+def summon_npc(coord_x, y, interactions, name, img, name_color = LBLUE):
     coord_x = fixed_coord_x(coord_x)
-    draw_color_text(screen,f"[{name}]", 20, coord_x, y - 40 , LBLUE)
+    draw_color_text(screen,f"[{name}]", 20, coord_x, y - 40 , name_color)
     draw_img(screen, img, coord_x - img.get_width() / 2, y)
     if abs(player.rect.x - (coord_x + 80 - img.get_width() / 2)) <= 80:
         y_move = 0
@@ -1301,7 +1304,6 @@ def teleport(coord_x):
     Player_location.coord_x = coord_x
 #修正座標
 def fixed_coord_x(coord_x):
-    # fix = (int(Player_location.dash_distance > 0) - int(Player_location.dash_distance < 0)) * 30
     return player.rect.x - (Player_location.coord_x - coord_x)
 #偵測鼠標懸停(長方形)
 def is_hovering(x1, x2, y1, y2, mouse_x = 0, mouse_y = 0, mouse_icon = ""):
@@ -1416,6 +1418,49 @@ def default():
     Player_location.disable_ground = False
     Player_location.anti_gravity = False
     Area18.stellaris_phase = 0
+#恢復狀態
+def restore():
+    if not Areas.regen_lock:
+        All_mobs.kill = True
+        player.health = player.health_limit
+        Mage.mana = Stats.total["魔力上限"]
+        for areas in Areas.mob_killed:
+            Areas.mob_killed[areas] = False
+        for areaID in Areas.object:
+            for objID in Areas.object[areaID]:
+                obj = Areas.object[areaID][objID]
+                #恢復可重生物件
+                if obj["respawnable"] and not obj["exist"]:
+                    obj["exist"] = True
+                    obj["onMap"] = False
+                    if Info.open: print("已重生" + str(obj))
+#檢查可生成地圖物件
+def get_spawnable_objects(area_id):
+    result = []
+    for obj_id, obj in Areas.object.get(area_id, {}).items():
+        if obj["exist"] and not obj["onMap"]:
+            obj.update({"objID":obj_id, "areaID":area_id})
+            result.append((obj))
+    return result
+#生成/刪除地圖物件
+def manage_map_obj(objData, manage = "生成"):
+    objType = objData["objType"]
+    areaID = objData["areaID"]
+    objID = objData["objID"]
+    manageCompleted = False
+    if manage == "生成" and not Areas.object[areaID][objID]["onMap"] and Areas.object[areaID][objID]["exist"]:
+        Areas.object[areaID][objID]["onMap"] = True
+        manageCompleted = True
+    elif manage == "隱藏" and Areas.object[areaID][objID]["onMap"] and Areas.object[areaID][objID]["exist"]:
+        Areas.object[areaID][objID]["onMap"] = False
+        manageCompleted = True
+    elif manage == "移除" and Areas.object[areaID][objID]["onMap"]:
+        Areas.object[areaID][objID]["onMap"] = False
+        Areas.object[areaID][objID]["exist"] = False
+        manageCompleted = True
+    if manageCompleted:
+        if objType == "mob": print("已" + manage + "怪物:" + str({"areaID":areaID, "objID":objID, "coord":objData["objPos"], "mobType":objData["mobType"], "mobLevel":objData["mobLevel"]}))
+        if objType == "lootchest": print("已" + manage + "戰利品箱:" + str({"areaID":areaID, "objID":objID, "coord":objData["objPos"], "lootchestTier":objData["lootchestTier"], "loot":objData["loot"]}))
 #選單
 def show_menu():
     forge_tick = 0
@@ -1428,6 +1473,7 @@ def show_menu():
     elif Stats.open: menu = 8
     elif A_tree.open: menu = 9
     elif Portal.open: menu = 11
+    elif Save_load.open: menu = 10
     elif Depth.menu_open: menu = 12
     elif Depth.blessing_menu: menu = 13
     elif Trade.open:
@@ -2758,6 +2804,8 @@ def show_menu():
                     return True
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
+                        Save_load.open = False
+                        Areas.safe = False
                         Save_load.warning = 0
                         waiting = False
                         return False
@@ -2786,11 +2834,12 @@ def show_menu():
                             if Areas.safe:
                                 Save_load.warning = 2
                             if Areas.safe == False:
-                                print("只能在城鎮內存檔")
+                                print("只能在營火存檔")
                     if hovering_confirm_button:
                         if Save_load.warning == 1:
                             try:
                                 Save_load.warning = 0
+                                Save_load.open = False
                                 load(Save_load.selected)
                                 title("讀檔成功!", "檔案名稱: Save" + str(Save_load.selected))
                                 for item, count in Inv.invload.items():
@@ -2800,6 +2849,7 @@ def show_menu():
                                 elif Inv.equip["bow"] and player.weapon == 2: Inv.equip["hotbar"][0] = Inv.equip["bow"]
                                 elif Inv.equip["wand"] and player.weapon == 3: Inv.equip["hotbar"][0] = Inv.equip["wand"]
                                 else: Inv.equip["hotbar"][0] = ""
+                                Areas.safe = False
                                 All_mobs.kill = True
                                 waiting = False
                                 return False
@@ -2812,6 +2862,8 @@ def show_menu():
                     if hovering_cancel_button:
                         Save_load.warning = 0
                     if hovering_close_button:
+                        Save_load.open = False
+                        Areas.safe = False
                         waiting = False
                         return False
                 if (press_button[1]):
@@ -5248,6 +5300,7 @@ class Quest_04():
 #存檔/讀檔
 class Save_load():
     def __init__(self):
+        self.open = False
         self.selected = 1
         self.warning = 0
         self.empty = ""
@@ -5304,6 +5357,7 @@ class Trade():
 #區域
 class Areas():
     def __init__(self):
+        self.object = {}
         self.area = 0
         self.areas = 0
         self.spawnpoint = 0
@@ -5445,6 +5499,7 @@ def load(file):
         print(file.readline()[:-1])
         Player.name = file.readline()[:-1]
         player.health = eval(file.readline())
+        player.health_limit = player.health
         player_location_temp = eval(file.readline())
         teleport(player_location_temp)
         player.rect.y = eval(file.readline())
@@ -5547,6 +5602,11 @@ items = pygame.sprite.Group()
 lootchests = pygame.sprite.Group()
 player = Player()
 all_sprites.add(player)
+Areas.object = {
+    1:{1:{"objPos":(600, GROUND), "objType":"mob", "mobType":"slime", "mobLevel":1, "respawnable":True, "exist":True, "onMap":False}, 
+       2:{"objPos":(700, GROUND), "objType":"mob", "mobType":"slime", "mobLevel":1, "respawnable":True, "exist":True, "onMap":False},
+       3:{"objPos":(600, GROUND), "objType":"lootchest", "lootchestTier":2, "loot":[{"index":"初階影脈護符", "count":1}], "respawnable":False, "exist":True, "onMap":False}}
+}
 Areas.area = 1
 Areas.areas = 20
 Areas.spawn = True
@@ -5619,6 +5679,7 @@ A_tree.skill_img = [
     {"火焰箭矢":archer_skill1_img, "苦無":archer_ultimate_img},
     {"隕石":mage_skill1_img, "瞬水爆":mage_ultimate_img}]
 A_tree.specialization_unlock = {"rogue":{"流放者":False, "聖騎士":False, "疾風行者":False}, "archer":{"鷹眼":False, "魔箭手":False}, "mage":{"奧術師":False, "牧師":False}}
+Save_load.open = False
 Save_load.selected = 1
 Save_load.warning = 0
 Save_load.health_preview = 0
@@ -6106,18 +6167,6 @@ while running:
         All_mobs.boss_fight_active = False
         title("戰敗!", "小心怪物!")
         default()
-    #是否進入安全區
-    safe_zone = [2, 3, 11, 17]
-    if Areas.area in safe_zone:
-        Areas.safe = True
-    else: Areas.safe = False
-    #安全區
-    if Areas.safe:
-        if Areas.regen_lock == False:
-            player.health = player.health_limit
-            Mage.mana = Stats.total["魔力上限"]
-        for areas in Areas.mob_killed:
-            Areas.mob_killed[areas] = False
     #區域攻略檢測
     skip_areas = [-5, 0, 7, 8, 9, 10, 16]
     if Areas.area not in skip_areas and Areas.lootchest[Areas.area] == 0: Areas.cleared[Areas.area] = True
@@ -6129,6 +6178,17 @@ while running:
         if Areas.first["天空群島"]:
             title("發現區域 - 天空群島")
             Areas.first["天空群島"] = False
+    #生成地圖物件
+    for obj in get_spawnable_objects(Areas.area):
+        if obj["objType"] in ("mob", "lootchest"):
+            manage_map_obj(obj)
+        if obj["objType"] == "campfire":
+            option = summon_npc(obj["objPos"][0], obj["objPos"][1], {"休息":"休息", "存檔":"存檔"}, "營火", campfire_img, RED)
+            if option == ("休息", "休息"): restore()
+            if option == ("存檔", "存檔"):
+                Areas.safe = True
+                Save_load.open = True
+                menu = True
     #區域
     if Areas.area == -1:#城鎮中心
         #常駐事件
@@ -6350,10 +6410,13 @@ while running:
                 Quest.open = True
                 menu = True
                 Areas.use = False
-        #攻略判定
-        if Areas.spawn == False and Lootchest_info.exist != True and Areas.cleared[2] == False:
-            spawn_lootchest(player.rect.x - (Player_location.coord_x - 1700), GROUND + 10, 1, 2)
-            Lootchest_info.exist = True
+        #營火(休息點)
+        option = summon_npc(1690, 370, {"休息":"休息", "存檔":"存檔"}, "營火", campfire_img, RED)
+        if option == ("休息", "休息"): restore()
+        if option == ("存檔", "存檔"):
+            Areas.safe = True
+            Save_load.open = True
+            menu = True
         #每次觸發事件
         if Areas.spawn:
             Areas.spawnpoint = 1500
