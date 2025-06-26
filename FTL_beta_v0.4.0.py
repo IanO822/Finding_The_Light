@@ -1301,8 +1301,8 @@ def teleport(coord_x):
     Player_location.coord_x = coord_x
 #修正座標
 def fixed_coord_x(coord_x):
-    fix = (int(Player_location.dash_distance > 0) - int(Player_location.dash_distance < 0)) * 30
-    return player.rect.x - (Player_location.coord_x - coord_x - fix)
+    # fix = (int(Player_location.dash_distance > 0) - int(Player_location.dash_distance < 0)) * 30
+    return player.rect.x - (Player_location.coord_x - coord_x)
 #偵測鼠標懸停(長方形)
 def is_hovering(x1, x2, y1, y2, mouse_x = 0, mouse_y = 0, mouse_icon = ""):
     if x1 < Mouse.x < x2 and y1 < Mouse.y < y2 and mouse_icon:
@@ -3309,10 +3309,10 @@ class Player(pygame.sprite.Sprite):
         self.move_distant = max(self.speed, 0)
         if key_pressed[pygame.K_d] and Player_location.disable_move == False and Player_location.dash_distance == 0:
             self.facing = 1
-            if player.rect.right + self.move_distant <= WIDTH: Player_location.coord_x += self.move_distant
+            if player.rect.right + self.move_distant <= WIDTH: Player_location.x_move += self.move_distant
         if key_pressed[pygame.K_a] and Player_location.disable_move == False and Player_location.dash_distance == 0:
             self.facing = -1
-            if player.rect.left - self.move_distant >= 0: Player_location.coord_x -= self.move_distant
+            if player.rect.left - self.move_distant >= 0: Player_location.x_move -= self.move_distant
         #11區移動
         if Area11.x_velocity > 1:
             Player_location.coord_x += 10
@@ -3586,6 +3586,7 @@ class Player(pygame.sprite.Sprite):
 #玩家位置
 class Player_location:
     def __init__(self):
+        self.x_move = 0
         self.disable_move = False
         self.disable_jump = False
         self.disable_ground = False
@@ -5629,6 +5630,7 @@ Save_load.archer_level_preview = 0
 Save_load.archer_xp_preview = 0
 Save_load.mage_level_preview = 0
 Save_load.mage_xp_preview = 0
+Player_location.x_move = 0
 Player_location.disable_move = False
 Player_location.disable_jump = False
 Player_location.anti_gravity = False
@@ -5915,6 +5917,8 @@ while running:
     except:
         None
     #滾動式背景
+    Player_location.coord_x += Player_location.x_move
+    Player_location.x_move = 0
     scrolling_background(first_time_load_scrolling_background)
     first_time_load_scrolling_background = False
     #取得輸入
@@ -6075,7 +6079,7 @@ while running:
         if player.facing == 1: draw_img(screen, player_dash_right_img, player.rect.centerx - 80, player.rect.y + 120)
         if player.facing == -1: draw_img(screen, player_dash_left_img, player.rect.centerx, player.rect.y + 120)
         Damage_to_player.damage = 0
-        if not (player.rect.right + 30 >= WIDTH or player.rect.left - 30 <= 0): Player_location.coord_x += (30 * player.facing)
+        if not (player.rect.right + 30 >= WIDTH or player.rect.left - 30 <= 0): Player_location.x_move += (30 * player.facing)
         Player_location.dash_distance -= 30 * player.facing
         if Player_location.dash_distance >= 300 or Player_location.dash_distance <= -300: Player_location.dash_distance = 0
     if time < 60:
