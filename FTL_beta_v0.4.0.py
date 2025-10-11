@@ -8,7 +8,6 @@ import random
 import math
 import datetime
 import time
-import numpy as np
 import copy
 
 #基本定義
@@ -71,11 +70,12 @@ try:
 except:
     None
 #全螢幕
-FULLSCREEN = True
+FULLSCREEN = False
+
 if FULLSCREEN:
     info = pygame.display.Info()
     SCREEN_WIDTH, SCREEN_HEIGHT = info.current_w, info.current_h
-    display = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)#pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF)
+    display = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME) #pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF)
     scale = min(SCREEN_WIDTH / WIDTH, SCREEN_HEIGHT / HEIGHT)
     screen = pygame.Surface((WIDTH, HEIGHT))
 else:
@@ -380,6 +380,7 @@ item_wooden_bow_img = pygame.image.load(os.path.join("resource", "item_wooden_bo
 item_wand_img = pygame.image.load(os.path.join("resource", "item_wand.png")).convert()
 item_spirit_harvester_img = pygame.image.load(os.path.join("resource", "item_spirit_harvester.png")).convert()
 item_silvermoon_blade_img = pygame.image.load(os.path.join("resource", "item_silvermoon_blade.png")).convert()
+item_flame_sword_img = pygame.image.load(os.path.join("resource", "item_flame_sword.png")).convert()
 #armor
 #charm
 item_basic_shadow_charm = pygame.image.load(os.path.join("resource", "item_basic_shadow_charm.png")).convert()
@@ -522,7 +523,10 @@ archer_ultimate_img.set_colorkey(GREEN)
 mage_skill1_img.set_colorkey(GREEN)
 mage_ultimate_img.set_colorkey(GREEN)
 smoke_bomb_img = rogue_skill6_img.subsurface(rogue_skill6_img.get_bounding_rect()).copy()
+portal_gui_img = pygame.image.load(os.path.join("resource", "portal_gui.png")).convert()
 portal_img = pygame.image.load(os.path.join("resource", "portal.png")).convert()
+portal_img = pygame.transform.scale(portal_img, (105*1.5, 150*1.5))
+portal_img.set_colorkey(GREEN)
 depth_room_menu_img = pygame.image.load(os.path.join("resource", "depth_room_menu.png")).convert()
 depth_blessing_menu_img = pygame.image.load(os.path.join("resource", "depth_blessing_menu.png")).convert()
 depth_blessing_upgrade_img = pygame.image.load(os.path.join("resource", "depth_blessing_upgrade.png")).convert()
@@ -671,7 +675,8 @@ def outline_text(text, size, x, y, color):
 #NPC
 def summon_npc(coord_x, y, interactions, name, img, name_color = LBLUE):
     coord_x = fixed_coord_x(coord_x)
-    draw_color_text(screen,f"[{name}]", 20, coord_x, y - 40 , name_color)
+    if name:
+        draw_color_text(screen,f"[{name}]", 20, coord_x, y - 40 , name_color)
     draw_img(screen, img, coord_x - img.get_width() / 2, y)
     if abs(player.rect.x - (coord_x + 80 - img.get_width() / 2)) <= 80:
         y_move = 0
@@ -679,10 +684,10 @@ def summon_npc(coord_x, y, interactions, name, img, name_color = LBLUE):
             y_move += 60
             draw_img(screen, ability_tree_empty_button_img, coord_x + 50, y - 50 + y_move)
             draw_color_text(screen, option, 30, coord_x + 125, y - 45 + y_move, WHITE)
-            press_button = pygame.mouse.get_pressed()
             if is_hovering(coord_x + 50, coord_x + 200, y - 50 + y_move, y + y_move, Mouse.x, Mouse.y):
                 pygame.draw.rect(screen, WHITE, (coord_x + 50, y - 50 + y_move, 150, 50), 3)
-                if press_button[0]:
+                if Mouse.released:
+                    Mouse.released = False
                     return option, action
 #血條
 def draw_health(surf, hp, limit, x, y, color):
@@ -1300,8 +1305,10 @@ def circle_cd_indicator(x, y, radius, time, total_time, thickness, color = GREEN
     rect = pygame.Rect(x, y, radius * 2, radius * 2)
     pygame.draw.arc(screen, color, rect, math.radians(start_angle), math.radians(end_angle), thickness)
 #傳送
-def teleport(coord_x):
+def teleport(coord_x, coord_y = None):
     Player_location.coord_x = coord_x
+    if coord_y != None:
+        player.rect.y = coord_y
 #修正座標
 def fixed_coord_x(coord_x):
     return player.rect.x - (Player_location.coord_x - coord_x)
@@ -1418,6 +1425,14 @@ def default():
     Player_location.disable_ground = False
     Player_location.anti_gravity = False
     Area18.stellaris_phase = 0
+    for areaID in Areas.object:
+            for objID in Areas.object[areaID]:
+                obj = Areas.object[areaID][objID]
+                #恢復可重生物件
+                if obj.get("respawnable", True) and not obj.get("exist", False):
+                    obj["exist"] = True
+                    obj["onMap"] = False
+                    if Info.open: print("已重生" + str(obj))
 #恢復狀態
 def restore():
     if not Areas.regen_lock:
@@ -1430,17 +1445,20 @@ def restore():
             for objID in Areas.object[areaID]:
                 obj = Areas.object[areaID][objID]
                 #恢復可重生物件
-                if obj["respawnable"] and not obj["exist"]:
+                if obj.get("respawnable", True) and not obj.get("exist", False):
                     obj["exist"] = True
                     obj["onMap"] = False
                     if Info.open: print("已重生" + str(obj))
 #檢查可生成地圖物件
-def get_spawnable_objects(area_id):
+def get_spawnable_objects(areas):
     result = []
-    for obj_id, obj in Areas.object.get(area_id, {}).items():
-        if obj["exist"] and not obj["onMap"]:
-            obj.update({"objID":obj_id, "areaID":area_id})
-            result.append((obj))
+    for area_id in areas:
+        for obj_id, obj in Areas.object.get(area_id, {}).items():
+            if obj.get("stageReq", False): stageCompleted = obj["stageReq"]()
+            else: stageCompleted = True
+            if obj["exist"] and not obj["onMap"] and stageCompleted:
+                obj.update({"objID":obj_id, "areaID":area_id})
+                result.append((obj))
     return result
 #生成/刪除地圖物件
 def manage_map_obj(objData, manage = "生成"):
@@ -2878,8 +2896,8 @@ def show_menu():
             def portal_unlock(location):
                 Portal.unlock[location] = True
                 new_message("已解鎖" + location + "傳送門")
-            portal_areas = {-2:{"曙光之城":-2900}, 11:{"一號路口":10000}, 17:{"天堂":16100}}
-            draw_img(screen, portal_img, 30, 50)
+            portal_areas = {-3:{"玩家基地":-3500}, -2:{"曙光之城":-2900}, 11:{"一號路口":10000}, 17:{"天堂":16100}}
+            draw_img(screen, portal_gui_img, 30, 50)
             draw_img(screen, button_close_img, 900, 80)
             tp_info = {0:0}
             y_move = 0
@@ -4096,7 +4114,7 @@ class Mob(pygame.sprite.Sprite):
             new_boss_skill_bar("核心暴露剩餘時間", self.core_expose_time, 600)
             new_boss_skill_bar("核心生命值", self.core_health, 200)
             self.image = stellaris_2_img
-            if self.core_open_by_npc_ability == False: new_dialogue("無垠的象徵，於虛空中顯現!", "星疫必須擴散!", "Stellaris", "星辰令使")
+            if not self.core_open_by_npc_ability: new_dialogue("無垠的象徵，於虛空中顯現!", "星疫必須擴散!", "Stellaris", "星辰令使")
             def core_close(health):
                 if self.core_open_by_npc_ability and health > 0: health = 0
                 self.health += health
@@ -4449,13 +4467,12 @@ class Mob(pygame.sprite.Sprite):
             if self.falling and self.rect.y < self.ground: self.rect.y = min(self.rect.y + 15, self.ground)
             #時間
             self.time += 1
-            if self.time == 1: teleport(17500)
             #開核心
             if Area18.aurora_attack == 2:
                 self.active_skills["核心暴露"] = True
                 self.core_open_by_npc_ability = True
             #第0階段:
-            if self.time == 1: mob_teleport(17690 + 500 - Area18.blight_area)
+            if self.time % 60 == 0: mob_teleport(17690 + 500 - Area18.blight_area)
             if Area18.stellaris_phase == 0 and self.time == 180:
                 self.can_skill = True
                 Area18.stellaris_phase = 1
@@ -4465,6 +4482,8 @@ class Mob(pygame.sprite.Sprite):
                 else: self.skills = {"星疫蔓延":10, "星界降臨":15, "星疫孵化":10, "星疫雷射":10, "殞命刺擊":10, "星疫隕石":15, "逆轉命運":10, "核心暴露":10, "收集星輝":5, "守護Tuleen":5}
                 if self.health <= 0:
                     Area18.boss_claim_area = 0
+                    for skill in self.active_skills:
+                        skill = False
                     mob_teleport(18300)
                     new_dialogue("如果我快死了，我將帶上他們!", "", "Stellaris", "星辰令使")
                     self.image = stellaris_3_img
@@ -5105,6 +5124,7 @@ class Lootchest(pygame.sprite.Sprite):
         self.rect.bottom = y - 73
         self.area = area
         self.items = contain_items if contain_items != "none" else []
+    
     def update(self):
         lootchest_imgs = {1:t1_lootchest_img, 2:t2_lootchest_img, 3:t3_lootchest_img, 4:t4_lootchest_img}
         draw_img(screen, lootchest_imgs[self.tier], self.rect.x, self.rect.top)
@@ -5431,6 +5451,8 @@ class Mouse():
     def __init__(self):
         self.x = 0
         self.y = 0
+        self.pressed = False
+        self.released = False
 #存檔
 def save(file):
     with open("Save" + str(file) + ".txt", mode = "w", encoding = "utf-8") as file:
@@ -5602,10 +5624,66 @@ items = pygame.sprite.Group()
 lootchests = pygame.sprite.Group()
 player = Player()
 all_sprites.add(player)
+Quest_01.progressing = False
+Quest_01.complete = False
+Quest_01.stage = 0
+Quest_02.progressing = False
+Quest_02.complete = False
+Quest_02.dialogue = ["噢，你來了。我有一個重要的任務，你是否願意接受", "是否開啟主線任務:黑暗勢力的威脅?", "當然，市長。我願意幫助城鎮。", "很好。在城鎮之外，穿越森林，你將找到一片廢墟，而廢墟後有一座墓園", "那個廢墟是這個城鎮的前身，曾經遭受黑暗勢力的襲擊，現在變成了廢墟。", "墓園？那裡有什麼重要的事情嗎?", "在墓園內，有一個古老的地下墓穴，而裡面有一扇門，只有特殊的鑰匙才能打開。", "那鑰匙是什麼?", "這就是你的任務。你需要在廢墟中找到靈魂碎片，它是打開地下墓穴門的鑰匙。", "了解。還有別的嗎?", "當你進入地下墓穴，你會面對一些棘手的敵人。你的目標是討伐他們，取得生命水晶。", "生命水晶?", "是的，我們需要生命水晶來恢復這個城鎮的生機", "而且，我聽說，那些黑暗勢力的領袖持有一把古老但強力的武器。", "也許你能夠得到它。", "好的，我會嘗試的。", "勇者，城鎮的希望寄託在你身上。", "遇到困難不要怕，堅持微笑面對他!", "你帶著生命水晶回來了!這些怪物會不會很強大?", "「下次還填非常簡單!」", "好吧。總之，在你前往下個區域之前，曙光之城永遠歡迎你回來。", "這些金幣是作為你完成任務的獎勵。", "向著旅途的下一站前進!"]
+Quest_02.stage = 0
+Quest_03.progressing = False
+Quest_03.complete = False
+Quest_03.stage = 0
+Quest_04.progressing = False
+Quest_04.complete = False
+Quest_04.stage = 0
 Areas.object = {
+    -6:{1:{"objPos":(-6750, 350), "objType":"npc", "npcData":{"npcName":"無鋒", "nameColor":WHITE, "npcImg":rogue_charm_shop_img}, "npcOption":{"交易":{"optionType":"trade", "shop":"刺客護符商人"}}, "respawnable":True, "exist":True, "onMap":False},
+        2:{"objPos":(-6250, 350), "objType":"door", "linkedCoord":(-5950, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
+        3:{"objPos":(-6600, 350), "objType":"door", "linkedCoord":(4500, player.rect.y), "respawnable":True, "exist":True, "onMap":False}},
+    -5:{2:{"objPos":(-5850, 350), "objType":"door", "linkedCoord":(-6200, player.rect.y), "respawnable":True, "exist":True, "onMap":False}},
+    -3:{1:{"objPos":(-3500, 350), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":portal_img}, "npcOption":{"傳送":{"optionType":"portal"}}, "respawnable":True, "exist":True, "onMap":False}},
+    -2:{1:{"objPos":(-2900, 350), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":portal_img}, "npcOption":{"傳送":{"optionType":"portal"}}, "respawnable":True, "exist":True, "onMap":False},
+        2:{"objPos":(-2700, 350), "objType":"door", "linkedCoord":(1500, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
+        3:{"objPos":(-2300, 350), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"選擇技能":{"optionType":"a_tree"}}, "respawnable":True, "exist":True, "onMap":False}},
+    -1:{1:{"objPos":(-1300, 350), "objType":"npc", "npcData":{"npcName":"市長", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"對話":{"optionType":"quest", "trackQuest":2}}, "respawnable":True, "exist":True, "onMap":False},
+        2:{"objPos":(-1900, 350), "objType":"door", "linkedCoord":(1050, player.rect.y), "respawnable":True, "exist":True, "onMap":False}},
     1:{1:{"objPos":(600, GROUND), "objType":"mob", "mobType":"slime", "mobLevel":1, "respawnable":True, "exist":True, "onMap":False}, 
        2:{"objPos":(700, GROUND), "objType":"mob", "mobType":"slime", "mobLevel":1, "respawnable":True, "exist":True, "onMap":False},
-       3:{"objPos":(600, GROUND), "objType":"lootchest", "lootchestTier":2, "loot":[{"index":"初階影脈護符", "count":1}], "respawnable":False, "exist":True, "onMap":False}}
+       3:{"objPos":(600, GROUND), "objType":"lootchest", "lootchestTier":2, "loot":[{"index":"初階影脈護符", "count":1}], "respawnable":False, "exist":True, "onMap":False}},
+    2:{1:{"objPos":(1690, 400), "objType":"campfire", "respawnable":True, "exist":True, "onMap":False},
+       2:{"objPos":(1070, 350), "objType":"door", "linkedCoord":(-1500, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
+       3:{"objPos":(1470, 350), "objType":"door", "linkedCoord":(-2500, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
+       4:{"objPos":(1900, 350), "objType":"npc", "npcData":{"npcName":"艾爾德里克", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"對話":{"optionType":"quest", "trackQuest":1}}, "respawnable":True, "exist":True, "onMap":False}},
+    3:{1:{"objPos":(2200, 350), "objType":"npc", "npcData":{"npcName":"鐵匠", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"鍛造":{"optionType":"forge"}}, "respawnable":True, "exist":True, "onMap":False},
+       2:{"objPos":(2700, 350), "objType":"npc", "npcData":{"npcName":"烘焙商人", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"交易":{"optionType":"trade", "shop":"烘焙商人"}}, "respawnable":True, "exist":True, "onMap":False}},
+    4:{1:{"objPos":(3700, GROUND - 50), "objType":"mob", "mobType":"skeleton", "mobLevel":3, "respawnable":True, "exist":True, "onMap":False}, 
+       2:{"objPos":(3500, GROUND - 50), "objType":"mob", "mobType":"tree_monster", "mobLevel":3, "respawnable":True, "exist":True, "onMap":False},
+       3:{"objPos":(3600, GROUND), "objType":"lootchest", "lootchestTier":2, "loot":[], "respawnable":False, "exist":True, "onMap":False}},
+    5:{1:{"objPos":(4500, 350), "objType":"door", "linkedCoord":(-6400, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
+       2:{"objPos":(4650, GROUND), "objType":"mob", "mobType":"skeleton", "mobLevel":4, "respawnable":True, "exist":True, "onMap":False},
+       3:{"objPos":(4750, GROUND), "objType":"mob", "mobType":"skeleton", "mobLevel":4, "respawnable":True, "exist":True, "onMap":False}},
+    6:{1:{"objPos":(5650, GROUND - 30), "objType":"mob", "mobType":"zombie", "mobLevel":5, "respawnable":True, "exist":True, "onMap":False}, 
+       2:{"objPos":(5750, GROUND - 30), "objType":"mob", "mobType":"zombie", "mobLevel":5, "respawnable":True, "exist":True, "onMap":False},
+       3:{"objPos":(5780, GROUND), "objType":"lootchest", "lootchestTier":2, "loot":[], "respawnable":False, "exist":True, "onMap":False},
+       4:{"objPos":(5800, 350), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"開啟":{"optionType":"quest", "trackQuest":2}}, "stageReq": lambda : Quest_02.stage == 15 and not Area6.cata_open, "respawnable":True, "exist":True, "onMap":False}},
+    8:{1:{"objPos":(7320, 350), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"開啟":{"optionType":"puzzle"}}, "stageReq": lambda : not Area8.puzzle_complete, "respawnable":True, "exist":True, "onMap":False}},
+    9:{1:{"objPos":(8400, 300), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"召喚":{"optionType":"triggerCmd", "command": [lambda : summon_mob(WIDTH / 2 + 10, GROUND - 100, 10, 9, "xerath"), lambda : switch_music(8), lambda : new_dialogue("你膽敢踏入我的領域，凡人?", "你的存在只會增加我的力量。", "Xerath", "暗影統治者"), lambda : setattr(Area9, "boss_summoned", True)]}}, "stageReq": lambda : not Area9.boss_summoned, "respawnable":True, "exist":True, "onMap":False}},
+    10:{1:{"objPos":(9520, GROUND - 20), "objType":"lootchest", "lootchestTier":4, "loot":[{"index":"生命水晶", "count":1}], "respawnable":False, "exist":True, "onMap":False}},
+    11:{1:{"objPos":(10100, 350), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"傳送":{"optionType":"portal"}}, "respawnable":True, "exist":True, "onMap":False},
+        2:{"objPos":(10300, 300), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"發射":{"optionType":"triggerCmd", "command":[lambda : setattr(Player_location, "disable_move", True), lambda : setattr(Area11, "x_velocity", 450), lambda : setattr(Area11, "y_velocity", 820)]}}, "respawnable":True, "exist":True, "onMap":False},
+        3:{"objPos":(10500, 300), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":nightblade_1_img}, "npcOption":{"對話":{"optionType":"quest", "trackQuest":4}}, "stageReq": lambda : Quest_04.stage <= 14,"respawnable":True, "exist":True, "onMap":False},
+        4:{"objPos":(10750, 300), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"進入":{"optionType":"triggerCmd", "command":[lambda: teleport(-7500), lambda: setattr(Depth, 'start', True), lambda: setattr(All_mobs, 'kill', True)]}}, "stageReq": lambda : Quest_04.stage <= 14,"respawnable":True, "exist":True, "onMap":False}},
+    12:{1:{"objPos":(11650, GROUND + 100), "objType":"lootchest", "lootchestTier":2, "loot":[], "respawnable":False, "exist":True, "onMap":False},
+        2:{"objPos":(11700, GROUND), "objType":"mob", "mobType":"slime", "mobLevel":6, "respawnable":True, "exist":True, "onMap":False},
+        3:{"objPos":(11800, 150), "objType":"mob", "mobType":"skywing_beast", "mobLevel":10, "respawnable":True, "exist":True, "onMap":False}},
+    13:{1:{"objPos":(12500, 400), "objType":"mob", "mobType":"cursed_silver_knight", "mobLevel":11, "respawnable":True, "exist":True, "onMap":False}},
+    14:{1:{"objPos":(13300, 200), "objType":"mob", "mobType":"skywing_beast", "mobLevel":12, "respawnable":True, "exist":True, "onMap":False},
+        2:{"objPos":(13700, 200), "objType":"mob", "mobType":"thunder_cloud", "mobLevel":12, "respawnable":True, "exist":True, "onMap":False}},
+    15:{1:{"objPos":(14300, 150), "objType":"mob", "mobType":"thunder_dragon", "mobLevel":15, "respawnable":True, "exist":True, "onMap":False},
+        2:{"objPos":(14500, 400), "objType":"mob", "mobType":"cursed_silver_knight", "mobLevel":13, "respawnable":True, "exist":True, "onMap":False}},
+    16:{1:{"objPos":(15700, 400), "objType":"npc", "npcData":{"npcName":"Aurora", "nameColor":WHITE, "npcImg":aurora_1_img}, "npcOption":{"對話":{"optionType":"quest", "trackQuest":3}}, "stageReq":lambda : Area16.ascension_distant == 0 and Quest_03.stage < 12,"respawnable":True, "exist":True, "onMap":False}},
+    17:{1:{"objPos":(16100, 300), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"傳送":{"optionType":"portal"}}, "respawnable":True, "exist":True, "onMap":False}}
 }
 Areas.area = 1
 Areas.areas = 20
@@ -5710,7 +5788,7 @@ Player.cooldowns = {"health":0, "dash":0,
                     "archer_focus":0, "archer_main":0 ,"火焰箭矢":0, "苦無":0, "苦無剩餘時間":0,
                     "mage_mana":0, "mage_main":0, "隕石":0, "瞬水爆":0, "mage_water_burst":0,
                     "message":0, "title":0, "dialogue":0, "forge":0}
-Player.skill_cooldowns = {"粗鐵劍":0, "木製弓":0, "基礎魔杖":0, "死靈收割之鐮":0, "銀月之刃":0, "秋日餽贈":0}
+Player.skill_cooldowns = {"粗鐵劍":0, "木製弓":0, "基礎魔杖":0,"火焰劍":0 ,"死靈收割之鐮":0, "銀月之刃":0, "秋日餽贈":0}
 Game_time.minute = 0
 Game_time.hour = 10
 Info.open = False
@@ -5772,6 +5850,7 @@ Inv.inventory = [
     {"name":"粗鐵劍", "itemType":"sword", "rarity":RARE, "img":item_iron_sword_img, "special":False, "count":1, "location":{"locationName":"鍛造 劍", "locationColor":GRAY}, "attribute":{"攻擊力":5}, "skill":{"skillName":"殘暴", "skillType":"主動技能", "skillTrigger":"S","skillCost":"無", "skillCD":10, "skillEffect":["立即使用普通攻擊", "並額外造成10點傷害"]}, "itemLore":[], "equip":True},
     {"name":"木製弓", "itemType":"bow", "rarity":RARE, "img":item_wooden_bow_img, "special":False, "count":1, "location":{"locationName":"鍛造 弓", "locationColor":GRAY}, "attribute":{"攻擊力":7}, "skill":{"skillName":"精準射擊", "skillType":"主動技能", "skillTrigger":"S","skillCost":"無", "skillCD":10, "skillEffect":["立即使用普通攻擊", "命中後獲得3點專注力"]}, "itemLore":[], "equip":True},
     {"name":"基礎魔杖", "itemType":"wand", "rarity":RARE, "img":item_wand_img, "special":False, "count":1, "location":{"locationName":"鍛造 魔杖", "locationColor":GRAY}, "attribute":{"攻擊力":8}, "skill":{"skillName":"治癒", "skillType":"主動技能", "skillTrigger":"S","skillCost":"30魔力", "skillCD":15, "skillEffect":["治癒30%最大生命"]}, "itemLore":[], "equip":True},
+    {"name":"火焰劍", "itemType":"sword", "rarity":RARE, "img":item_flame_sword_img, "special":True, "count":0, "location":{"locationName":"鍛造 劍", "locationColor":GOLD}, "attribute":{"攻擊力":8}, "skill":{"skillName":"放火", "skillType":"主動技能", "skillTrigger":"S","skillCost":"無", "skillCD":15, "skillEffect":["我不知道寫啥"]}, "itemLore":[], "equip":True},
     {"name":"死靈收割之鐮", "itemType":"sword", "rarity":EPIC, "img":item_spirit_harvester_img, "special":True, "count":0, "location":{"locationName":"地下墓穴 鐮刀", "locationColor":GRAY}, "attribute":{"攻擊力":10}, "skill":{"skillName":"收割", "skillType":"主動技能", "skillTrigger":"S","skillCost":"無", "skillCD":15, "skillEffect":["10秒內的普通攻擊", "附帶10%吸血"]}, "itemLore":[], "equip":True},
     {"name":"銀月之刃", "itemType":"sword", "rarity":EPIC, "img":item_silvermoon_blade_img, "special":False, "count":0, "count":0, "location":{"locationName":"星界聖域 劍", "locationColor":TEAL}, "attribute":{"攻擊力":15, "防禦力":10}, "skill":{"skillName":"銀月之誓", "skillType":"主動技能", "skillTrigger":"S","skillCost":"無", "skillCD":15, "skillEffect":["隨機召喚5把銀騎士武器攻擊目標，", "每把造成10點傷害"]}, "itemLore":["這把長劍是銀騎士的象徵，", "代表著榮耀與正義。"], "equip":True},
     #護符
@@ -5813,21 +5892,8 @@ Forge.cate = 1
 Forge.selected = 1
 Forge.working = 0
 Forge.max_last_time = 0
-Quest_01.progressing = False
-Quest_01.complete = False
-Quest_01.stage = 0
-Quest_02.progressing = False
-Quest_02.complete = False
-Quest_02.dialogue = ["噢，你來了。我有一個重要的任務，你是否願意接受", "是否開啟主線任務:黑暗勢力的威脅?", "當然，市長。我願意幫助城鎮。", "很好。在城鎮之外，穿越森林，你將找到一片廢墟，而廢墟後有一座墓園", "那個廢墟是這個城鎮的前身，曾經遭受黑暗勢力的襲擊，現在變成了廢墟。", "墓園？那裡有什麼重要的事情嗎?", "在墓園內，有一個古老的地下墓穴，而裡面有一扇門，只有特殊的鑰匙才能打開。", "那鑰匙是什麼?", "這就是你的任務。你需要在廢墟中找到靈魂碎片，它是打開地下墓穴門的鑰匙。", "了解。還有別的嗎?", "當你進入地下墓穴，你會面對一些棘手的敵人。你的目標是討伐他們，取得生命水晶。", "生命水晶?", "是的，我們需要生命水晶來恢復這個城鎮的生機", "而且，我聽說，那些黑暗勢力的領袖持有一把古老但強力的武器。", "也許你能夠得到它。", "好的，我會嘗試的。", "勇者，城鎮的希望寄託在你身上。", "遇到困難不要怕，堅持微笑面對他!", "你帶著生命水晶回來了!這些怪物會不會很強大?", "「下次還填非常簡單!」", "好吧。總之，在你前往下個區域之前，曙光之城永遠歡迎你回來。", "這些金幣是作為你完成任務的獎勵。", "向著旅途的下一站前進!"]
-Quest_02.stage = 0
-Quest_03.progressing = False
-Quest_03.complete = False
-Quest_03.stage = 0
-Quest_04.progressing = False
-Quest_04.complete = False
-Quest_04.stage = 0
 Portal.open = False
-Portal.unlock = {"曙光之城":True, "一號路口":False, "天堂":False}
+Portal.unlock = {"玩家基地":True, "曙光之城":True, "一號路口":False, "天堂":False}
 Depth.floor = 1
 Depth.room = 1
 Depth.start = True
@@ -6041,9 +6107,12 @@ while running:
             if event.key == pygame.K_SPACE:
                 player.jump_height = 0
                 player.jump_time -= 1
+        Mouse.pressed = False
         if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                Mouse.pressed = True
             if event.button == 2: A_tree.row = 3 - A_tree.row
-            if event.button in (4, 5) and any(Inv.equip["hotbar"]):  # 滾輪事件發生時
+            if event.button in (4, 5) and any(Inv.equip["hotbar"]):
                 original_index = Inv.hotbar_index  # 記錄當前 hotbar_index，避免無限循環
                 direction = -1 if event.button == 4 else 1  # 4=向上滾，5=向下滾
                 while True:
@@ -6056,6 +6125,10 @@ while running:
                 # 設定選擇標誌，開始計時
                 Inv.hotbar_selecting = True
                 Inv.hotbar_selection_timer = 0
+        Mouse.released = False
+        if event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                Mouse.released = True
         press_button = pygame.mouse.get_pressed()
         if (press_button[0]):
             if player.holding["food"] == 0:
@@ -6168,7 +6241,7 @@ while running:
         title("戰敗!", "小心怪物!")
         default()
     #區域攻略檢測
-    skip_areas = [-5, 0, 7, 8, 9, 10, 16]
+    skip_areas = [-3, -5, 0, 7, 8, 9, 10, 16]
     if Areas.area not in skip_areas and Areas.lootchest[Areas.area] == 0: Areas.cleared[Areas.area] = True
     if 0 < Areas.area < 11:
         if Areas.first["破曉平原"]:
@@ -6179,16 +6252,66 @@ while running:
             title("發現區域 - 天空群島")
             Areas.first["天空群島"] = False
     #生成地圖物件
-    for obj in get_spawnable_objects(Areas.area):
+    detecting_areas = [Areas.area, Areas.area + (1 if current_coord_x >= 500 else -1)]
+    for obj in get_spawnable_objects(detecting_areas):
         if obj["objType"] in ("mob", "lootchest"):
             manage_map_obj(obj)
+        #營火
         if obj["objType"] == "campfire":
             option = summon_npc(obj["objPos"][0], obj["objPos"][1], {"休息":"休息", "存檔":"存檔"}, "營火", campfire_img, RED)
-            if option == ("休息", "休息"): restore()
+            if option == ("休息", "休息"):
+                restore()
+                Areas.spawnpoint = 1500
             if option == ("存檔", "存檔"):
                 Areas.safe = True
                 Save_load.open = True
                 menu = True
+        #門
+        if obj["objType"] == "door":
+            option = summon_npc(obj["objPos"][0], obj["objPos"][1], {"進入":"進入"}, "", dmg_indicator_img, RED)
+            if option == ("進入", "進入"):
+                teleport(obj["linkedCoord"][0], obj["linkedCoord"][1])
+                All_mobs.kill = True
+                All_mobs.remove_lootchest = True
+        #NPC
+        if obj["objType"] == "npc":
+            option = summon_npc(obj["objPos"][0], obj["objPos"][1], obj["npcOption"], obj["npcData"]["npcName"], obj["npcData"]["npcImg"], obj["npcData"]["nameColor"])
+            for npcOption in obj["npcOption"]:
+                if option != None and option[0] == npcOption:
+                    #處理選項類別
+                    #任務
+                    if option[1]["optionType"] == "quest":
+                        Quest.tracking = option[1]["trackQuest"]
+                        Quest.open = True
+                        menu = True
+                    #鍛造
+                    if option[1]["optionType"] == "forge":
+                        Forge.open = True
+                        menu = True
+                    #交易
+                    if option[1]["optionType"] == "trade":
+                        Trade.items = option[1]["shop"]
+                        Trade.sidebar = Trade.shops[Trade.items][0]
+                        Trade.open = True
+                        menu = True
+                    #解謎
+                    if option[1]["optionType"] == "puzzle":
+                        Puzzle.open = True
+                        menu = True
+                    #傳送門
+                    if option[1]["optionType"] == "portal":
+                        Portal.open = True
+                        menu = True
+                    #天賦樹
+                    if option[1]["optionType"] == "a_tree":
+                        A_tree.gui_location_x = 0
+                        A_tree.gui_location_y = 0
+                        A_tree.open = True
+                        menu = True
+                    #觸發指令
+                    if option[1]["optionType"] == "triggerCmd":
+                        for command in option[1]["command"]:
+                            command()
     #區域
     if Areas.area == -1:#城鎮中心
         #常駐事件
@@ -6197,40 +6320,19 @@ while running:
         pygame.display.set_caption("Finding The Light - 城鎮中心")
         if current_coord_x >= 730:
             teleport(-1270)
-        option = summon_npc(-1300, 350, {"對話":"開啟任務"}, "市長", dmg_indicator_img)
-        if option != None and option[0] == "對話":
-            Quest.tracking = 2
-            Quest.open = True
-            menu = True
-        if 0 <= current_coord_x <= 100:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                teleport(1050)
-                Areas.use = False
     if Areas.area == -2:#法師塔頂樓
         #常駐事件
         Areas.lock_left = True
         Areas.lock_right = True
         pygame.display.set_caption("Finding The Light - 法師塔頂樓")
-        if 775 <= current_coord_x <= 825:
-            draw_img(screen, button_use_img, 800, 300)
-            if Areas.use:
-                A_tree.gui_location_x = 0
-                A_tree.gui_location_y = 0
-                A_tree.open = True
-                menu = True
-                Areas.use = False
-        if 400 <= current_coord_x <= 600:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                teleport(1500)
-                Areas.use = False
-        if 50 <= current_coord_x <= 100:
-            draw_img(screen, button_use_img, 75, 300)
-            if Areas.use:
-                Portal.open = True
-                menu = True
-                Areas.use = False
+        #每次觸發事件
+        if Areas.spawn:
+            Areas.spawn = False
+    if Areas.area == -3:#玩家基地
+        #常駐事件
+        Areas.lock_left = True
+        Areas.lock_right = True
+        pygame.display.set_caption("Finding The Light - 玩家基地")
         #每次觸發事件
         if Areas.spawn:
             Areas.spawn = False
@@ -6239,15 +6341,6 @@ while running:
         Areas.lock_left = True
         Areas.lock_right = True
         pygame.display.set_caption("Finding The Light - 曙光之城廢墟地下室")
-        if current_coord_x <= 30:
-            draw_img(screen, button_use_img, 30, 300)
-            if Areas.use:
-                teleport(-6150)
-                Areas.lock_left = True
-                Areas.lock_right = True
-                All_mobs.kill = True
-                All_mobs.remove_lootchest = True
-                Areas.use = False
         #攻略判定
         if Areas.spawn == False and All_mobs.crack_wall_broken and Areas.cleared[-5] == False and Areas.lootchest[-5] == 1 and Lootchest_info.exist != True:
             spawn_lootchest(900, GROUND - 30, 3, -5, [{"index":"靈魂碎片", "count":1}, {"index":"中階空刃護符", "count":1}])
@@ -6265,24 +6358,6 @@ while running:
         Areas.lock_right = True
         pygame.display.set_caption("Finding The Light - 曙光之城廢墟房屋")
         All_mobs.kill = True
-        option = summon_npc(-6750, 350, {"交易":"刺客護符商人", "對話":"2"}, "無鋒", rogue_charm_shop_img)
-        if option != None and option[0] == "交易":
-            Trade.items = option[1]
-            Trade.sidebar = Trade.shops[Trade.items][0]
-            Trade.open = True
-            menu = True
-            Areas.use = False
-        if 825 <= current_coord_x <= 875:
-            draw_img(screen, button_use_img, 850, 300)
-            if Areas.use:
-                teleport(-5950)
-                Areas.spawn = True
-                Areas.use = False
-        if 450 <= current_coord_x <= 500:
-            draw_img(screen, button_use_img, current_coord_x, 300)
-            if Areas.use:
-                teleport(4500)
-                Areas.use = False
         Areas.spawn = False
     if Areas.area == -7:#至黑深淵
         Areas.lock_right = True
@@ -6385,59 +6460,10 @@ while running:
     if Areas.area == 2:#曙光之城
         #常駐事件
         pygame.display.set_caption("Finding The Light - 曙光之城")
-        if 0 <= current_coord_x <= 100 and Areas.lock_right == False and Areas.lock_left == False:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                teleport(-1500)
-                All_mobs.kill = True
-                All_mobs.remove_lootchest = True
-                Areas.lock_left = True
-                Areas.lock_right = True
-                Areas.use = False
-        if 450 <= current_coord_x <= 550 and Areas.lock_right == False and Areas.lock_left == False:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                teleport(-2500)
-                All_mobs.kill = True
-                All_mobs.remove_lootchest = True
-                Areas.lock_left = True
-                Areas.lock_right = True
-                Areas.use = False
-        if 800 <= current_coord_x <= 850:
-            draw_img(screen, button_use_img, 500, 300)
-            if Areas.use:
-                Quest.tracking = 1
-                Quest.open = True
-                menu = True
-                Areas.use = False
-        #營火(休息點)
-        option = summon_npc(1690, 370, {"休息":"休息", "存檔":"存檔"}, "營火", campfire_img, RED)
-        if option == ("休息", "休息"): restore()
-        if option == ("存檔", "存檔"):
-            Areas.safe = True
-            Save_load.open = True
-            menu = True
-        #每次觸發事件
-        if Areas.spawn:
-            Areas.spawnpoint = 1500
         Areas.spawn = False
     if Areas.area == 3:#曙光之城
         #常駐事件
         pygame.display.set_caption("Finding The Light - 曙光之城")
-        if abs(Player_location.coord_x - 2700) < 100:
-            draw_img(screen, button_use_img, player.rect.x, 300)
-            if Areas.use:
-                Trade.items = "烘焙商人"
-                Trade.sidebar = Trade.shops[Trade.items][0]
-                Trade.open = True
-                menu = True
-                Areas.use = False
-        if 200 <= current_coord_x <= 250:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                Forge.open = True
-                menu = True
-                Areas.use = False
         #每次觸發事件:無
         Areas.spawn = False
     if Areas.area == 4:#靜謐森林
@@ -6455,14 +6481,6 @@ while running:
     if Areas.area == 5:#曙光之城廢墟
         #常駐事件
         pygame.display.set_caption("Finding The Light - 曙光之城廢墟")
-        if 450 <= current_coord_x <= 500:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                teleport(-6500)
-                Areas.spawn = True
-                All_mobs.kill = True
-                All_mobs.remove_lootchest = True
-                Areas.use = False
         #每次觸發事件
         if Areas.spawn and All_mobs.count == 0 and Areas.mob_killed[Areas.area] == False:
             summon_mob(player.rect.x - (Player_location.coord_x - 4650), GROUND, 4, 5, "skeleton")
@@ -6471,20 +6489,7 @@ while running:
     if Areas.area == 6:#墓園
         #常駐事件
         pygame.display.set_caption("Finding The Light - 墓園")
-        if Area6.cata_open == False:
-            Areas.lock_right = True
-        else:
-            Areas.lock_right = False
-        if 850 <= current_coord_x <= 950 and Areas.cleared[6]:
-            if Area6.cata_open != True:
-                draw_img(screen, button_use_img, player.rect.x, 300)
-            if Areas.use and Area6.cata_open == False and Quest_02.progressing == False and Quest_02.complete == False:
-                new_message("請先接取任務:黑暗勢力的威脅")
-            if Areas.use and Area6.cata_open == False and Quest_02.progressing:
-                Quest.tracking = 2
-                Quest.open = True
-                menu = True
-                Areas.use = False
+        Areas.lock_right = not Area6.cata_open
         #攻略判定
         if Areas.spawn == False and Lootchest_info.exist != True and Areas.cleared[Areas.area] == False:
             spawn_lootchest(player.rect.x - (Player_location.coord_x - 5780), GROUND, 2, 6)
@@ -6553,47 +6558,25 @@ while running:
             Areas.lock_left = False
     if Areas.area == 8:#地下墓穴符文鎖
         #常駐事件
-        if Areas.cleared[8]:
-            Areas.lock_right = False
-        else:
-            Areas.lock_right = True
-        if 320 <= current_coord_x <= 430 and Area8.puzzle_complete == False:
-            draw_img(screen, button_use_img, player.rect.x, 300)
-            if Areas.use:
-                Puzzle.open = True
-                menu = True
-                Areas.use = False
+        Areas.lock_right = not Area8.puzzle_complete
         #攻略判定
-        if Area8.puzzle_complete:
-            Areas.cleared[8] = True
+        Areas.cleared[8] = Area8.puzzle_complete
         #每次觸發事件:無
         Areas.spawn = False
     if Areas.area == 9:#地下墓穴魔王房
         #常駐事件
         pygame.display.set_caption("Finding The Light - 地下墓穴魔王房")
-        if Area9.boss_summoned == False and 450 <= current_coord_x <= 500:
-            draw_img(screen, button_use_img, 500, 300)
-            if Areas.use:
-                Areas.lock_left = True
-                Areas.lock_right = True
-                summon_mob(WIDTH / 2 + 10, GROUND - 100, 10, 9, "xerath")
-                switch_music(8)
-                Area9.boss_summoned = True
-                new_dialogue("你膽敢踏入我的領域，凡人?", "你的存在只會增加我的力量。", "Xerath", "暗影統治者")
-                Areas.use = False
-        if Area9.first_beat_boss:
-            Areas.lock_right = True
+        Areas.lock_left = All_mobs.boss_fight_active
+        Areas.lock_right = All_mobs.boss_fight_active
+        Areas.lock_right = Area9.first_beat_boss
         #攻略判定
         if Areas.spawn == False and Area9.boss_summoned and All_mobs.count == 0:
-            Areas.lock_right = False
-            Areas.lock_left = False
             Areas.cleared[9] = True
-            Area9.boss_summoned = False
             All_mobs.boss_fight_active = False
         #每次觸發事件
         if Areas.spawn:
             Area9.boss_summoned = False
-        Areas.spawn = False
+            Areas.spawn = False
     if Areas.area == 10:#地下墓穴獎勵房
         #常駐事件
         pygame.display.set_caption("Finding The Light - 地下墓穴獎勵房")
@@ -6608,35 +6591,6 @@ while running:
         #常駐事件
         pygame.display.set_caption("Finding The Light - 一號路口")
         Areas.lock_right = True
-        if 0 <= current_coord_x <= 100:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                Portal.open = True
-                menu = True
-                Areas.use = False
-        #進入空島
-        if 200 <= current_coord_x <= 400:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                Player_location.disable_move = True
-                Area11.x_velocity = 450
-                Area11.y_velocity = 820
-                Areas.use = False
-        if Quest_04.stage <= 14:
-            option = summon_npc(10600, 350, {"對話":"開啟任務"}, "夜刃", nightblade_1_img)
-            if option != None and option[0] == "對話":
-                Quest.tracking = 4
-                Quest.open = True
-                menu = True
-        #進入深淵
-        if 850 <= current_coord_x <= 950:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                teleport(-7500)
-                Depth.start = True
-                All_mobs.kill = True
-                Areas.spawn = False
-                Areas.use = False
         #每次觸發事件:無
         Areas.spawn = False
     if Areas.area == 12:#天空群島1
@@ -6703,17 +6657,9 @@ while running:
     if Areas.area == 16:#天空群島5
         #常駐事件
         pygame.display.set_caption("Finding The Light - 天空群島")
-        if Player_location.player_move and Area16.ascension_distant == 0 and Quest_03.stage < 12: draw_img(screen, aurora_1_img, 850, 400)
-        elif Area16.ascension_distant == 0 and Quest_03.stage < 12: draw_img(screen, aurora_1_img, player.rect.x - (Player_location.coord_x - 15850), 400)
         if Area16.ascension_distant < 1480 or Area16.ascension_distant == 0:
             Areas.lock_right = True
         if Player_location.coord_x > 15830 and Area16.ascension_distant == 0 and Quest_03.stage < 12: teleport(15830)
-        if 770 < player.rect.centerx and Area16.ascension_distant == 0 and Quest_03.stage < 12:
-            option = summon_npc(15830, 350, {"對話":"開啟任務"}, "Aurora", dmg_indicator_img)
-            if option != None and option[0] == "對話":
-                Quest.tracking = 3
-                Quest.open = True
-                menu = True
         #任務動畫
         if Quest_03.stage == 10 and player.rect.y >= 0 and Area16.ascension_distant == 0:
             player.flying = True
@@ -6786,12 +6732,6 @@ while running:
         #常駐事件
         pygame.display.set_caption("Finding The Light - 天堂")
         Areas.lock_left = True
-        if 0 <= current_coord_x <= 100:
-            draw_img(screen, button_use_img, Player_location.x, 300)
-            if Areas.use:
-                Portal.open = True
-                menu = True
-                Areas.use = False
         #進入天堂
         if Area16.ascension_distant >= 1500 and Quest_03.stage == 11:
             background_location_y = 0
@@ -6995,24 +6935,27 @@ while running:
         outline_text(stack, 40, x, 620, WHITE)
     #狀態效果顯示欄
     effect_imgs = {"生命回復":icon_health_regen_img, "移動速度":icon_speed_img, "腥紅收割":icon_crimson_harvest_img}
+    effect_map = {"移動速度":0.1}
     if player.effects:
         for idx, effect in enumerate(player.effects):
+            effect_display_level = round(effect["level"] * effect_map.get(effect["name"], 1))
             if effect_imgs.get(effect["name"]):
                 pygame.draw.rect(screen, AGRAY, (0 + idx * 50, 530, 60, 70))
                 pygame.draw.rect(screen, DGRAY, (10 + idx * 50, 535, 40, 40))
                 draw_img(screen, effect_imgs[effect["name"]], 10 + idx * 50, 535)
-                outline_text(effect["level"], 15, 40 + idx * 50 - 10 * len(str(effect["level"])), 553, WHITE)
+                outline_text(effect_display_level, 15, 40 + idx * 50 - 10 * len(str(effect_display_level)), 553, WHITE)
                 pygame.draw.rect(screen, BLACK, (10 + idx * 50, 535, 40, 40), 3)
                 effect_min = str(effect["tick"] // 3600)
                 effect_sec = str(effect["tick"] // 60).zfill(2)
                 draw_color_text(screen, effect_min + ":" + effect_sec, 20, 30 + idx * 50, 570, WHITE)
         for idx, effect in enumerate(player.effects):
+            effect_display_level = round(effect["level"] * effect_map.get(effect["name"], 1))
             if effect_imgs.get(effect["name"]):
                 if is_hovering(10 + idx * 50, 10 + idx * 50 + 40, 535, 575, Mouse.x, Mouse.y, "?"):
                     pygame.draw.rect(screen, AGRAY, (Mouse.x, Mouse.y - 100, 150, 100))
                     pygame.draw.rect(screen, BLACK, (Mouse.x, Mouse.y - 100, 150, 100), 3)
                     outline_text(effect["name"], 25, Mouse.x + 25, Mouse.y - 100, WHITE)
-                    draw_color_text(screen, "等級: " + str(effect["level"]), 25, Mouse.x + 75, Mouse.y - 70, WHITE)
+                    draw_color_text(screen, "等級: " + str(effect_display_level), 25, Mouse.x + 75, Mouse.y - 70, WHITE)
                     draw_color_text(screen, "剩餘: " + str(effect["tick"] // 60) + "秒", 25, Mouse.x + 75, Mouse.y - 45, WHITE)
     #圓形&技能疊層顯示器
     if player.weapon == 1:
