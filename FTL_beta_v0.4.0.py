@@ -9,6 +9,7 @@ import math
 import datetime
 import time
 import copy
+from collections import defaultdict
 
 #基本定義
 FPS = 60
@@ -70,7 +71,7 @@ try:
 except:
     None
 #全螢幕
-FULLSCREEN = False
+FULLSCREEN = True
 
 if FULLSCREEN:
     info = pygame.display.Info()
@@ -566,6 +567,13 @@ dd_elite_treasure_img = pygame.image.load(os.path.join("resource", "dd_elite_tre
 dd_boss_img = pygame.image.load(os.path.join("resource", "dd_boss.png")).convert()
 depth_room_background_img = {"起始房間1":dd_start_img[0], "起始房間2":dd_start_img[1], "起始房間3":dd_start_img[2], "廢棄下水道":dd_abandoned_sewer_img, "假扮商隊":dd_start_img[0], "攻擊守衛":dd_start_img[0] ,"魔王1":dd_boss_challenge_1_img, "魔王2":dd_boss_challenge_2_img, "魔王3":dd_boss_challenge_3_img, "獎勵房":dd_reward_img}
 depth_room_icon = {"戰鬥":depth_combat_img, "事件":depth_event_img, "黑市":depth_market_img, "挑戰":depth_challenge_img, "魔王":dd_boss_img, "廢棄下水道":depth_sewer_img, "假扮商隊":depth_disguiseMerchant_img, "攻擊守衛":depth_attackGuard_img, "魔王1":dd_boss_img, "魔王2":dd_boss_img, "魔王3":dd_boss_img}
+#玩家基地 - 方塊
+plot_block_list = ["grass_block", "doorway"]
+plot_block_imgs = {}
+for block in plot_block_list:
+    block_img = pygame.image.load(os.path.join("resource", f"{block}.png")).convert()
+    block_img.set_colorkey(GREEN)
+    plot_block_imgs.update({block:block_img})
 #背景
 area_background_imgs = {}
 special_areas = [6, 8, 12, 16]
@@ -1256,7 +1264,7 @@ def scrolling_background(first_load = False):
         Player_location.player_move = True
         player.rect.x = current_coord_x
     elif ((Areas.lock_left and current_coord_x > 500) or (Areas.lock_right and current_coord_x < 500) or (Areas.lock_right == False and Areas.lock_left == False)) and not (Areas.lock_left and Areas.lock_right):
-        background_location_x = -(Player_location.coord_x - ((Areas.area - 1) * 1000) - 500 - Player_location.background_moving)
+        background_location_x = -(Player_location.coord_x - ((Areas.area - 1) * 1000) - 500)
         Player_location.player_move = False
         player.rect.x = 500
     #畫出天空
@@ -1288,7 +1296,7 @@ def scrolling_background(first_load = False):
         moon_y = HEIGHT - ((Game_time.hour - 18) / 6) * HEIGHT
         pygame.draw.circle(screen, MOON_COLOR, (WIDTH // 2 - 25, int(moon_y)), 30)
     #畫出背景
-    if Areas.area != -7:
+    if Areas.area not in [-7, -3]:
         #下一個區域
         if background_location_x < 0 and Areas.lock_right == False and current_coord_x > 500:
             draw_img(screen, background_forward_img, background_location_x + 1000, background_location_y)
@@ -1297,6 +1305,28 @@ def scrolling_background(first_load = False):
         #上一個區域
         if background_location_x > 0 and Areas.lock_left == False and current_coord_x < 500:
             draw_img(screen, background_backward_img, background_location_x - 1000, 0)
+    #玩家基地
+    elif Areas.area == -3:
+        global plot_background_location_x, plot_background_location_y
+        Plot.chunk = Plot.x // 1000
+        plot_background_location_x = 500 - (Plot.x % 1000)
+        plot_background_location_y = 300 - (Plot.y % 600)
+        #讀取區塊，如果沒有澤生成
+        for k in [-1, 0, 1]:
+            if not Plot.map.get(Plot.chunk + k, False):
+                Plot.map[Plot.chunk + k] = {}
+                for i in range(10):
+                    set_block(((Plot.chunk + k) * 10 + i, 5), "grass_block")
+        #繪製區塊
+        if Plot.x % 1000 <= 500:
+            chunks_to_draw = {0:Plot.chunk, -1:Plot.chunk - 1}
+        else:
+            chunks_to_draw = {0:Plot.chunk, 1:Plot.chunk + 1}
+        for chunkNum, chunk in chunks_to_draw.items():
+            for coord, block in Plot.map[chunk].items():
+                if block.get("blockName", False):
+                    draw_img(screen, plot_block_imgs[block["blockName"]], plot_background_location_x + coord[0] % 10 * 100 + chunkNum * 1000, plot_background_location_y + coord[1] * 100 + 70)
+    remove_block((5, 4))
 #圓形冷卻顯示器
 def circle_cd_indicator(x, y, radius, time, total_time, thickness, color = GREEN):
     angle = (time / total_time) * 360
@@ -1479,6 +1509,62 @@ def manage_map_obj(objData, manage = "生成"):
     if manageCompleted:
         if objType == "mob": print("已" + manage + "怪物:" + str({"areaID":areaID, "objID":objID, "coord":objData["objPos"], "mobType":objData["mobType"], "mobLevel":objData["mobLevel"]}))
         if objType == "lootchest": print("已" + manage + "戰利品箱:" + str({"areaID":areaID, "objID":objID, "coord":objData["objPos"], "lootchestTier":objData["lootchestTier"], "loot":objData["loot"]}))
+#取得區塊內方塊
+def get_chuck_block(chunk):
+    return Plot.map[chunk]
+#取得特定座標方塊
+def get_block_data(coord):
+    return Plot.map[(coord[0] // 10)][coord]
+#放置方塊
+def set_block(origin_coord, blockName):
+    origin_chunk = origin_coord[0] // 10
+    
+    # 深拷貝主方塊資料
+    main_block = copy.deepcopy(Plot.block_raw_data[blockName])
+    
+    # 初始化 blockPos
+    main_block["blockPos"] = []
+    
+    # 主方塊也加入 relatedBlock
+    main_block["relatedBlock"] = {"name": blockName, "coord": origin_coord}
+    
+    # 放入地圖
+    Plot.map[origin_chunk][origin_coord] = main_block
+    
+    block_length, block_height = Plot.block_raw_data[blockName]["blockSize"]
+    
+    # 處理每個格子
+    for i in range(block_height):
+        for j in range(block_length):
+            block_coord = (origin_coord[0] + j, origin_coord[1] + i)
+            current_chunk = block_coord[0] // 10
+            
+            # 更新主方塊 blockPos
+            Plot.map[origin_chunk][origin_coord]["blockPos"].append(block_coord)
+            
+            # 非主方塊格子
+            if block_coord != origin_coord:
+                # 如果該格子不存在，先初始化
+                if block_coord not in Plot.map[current_chunk]:
+                    Plot.map[current_chunk][block_coord] = {}
+                
+                # 更新 relatedBlock
+                Plot.map[current_chunk][block_coord]["relatedBlock"] = {
+                    "name": blockName,
+                    "coord": origin_coord
+                }
+#移除方塊
+def remove_block(origin_coord):
+    origin_chunk = origin_coord[0] // 10
+    #1x1
+    if Plot.map[origin_chunk][origin_coord].get("blockSize") == (1, 1):
+        del Plot.map[origin_chunk][origin_coord]
+    #非1x1
+    else:
+        main_block_coord = Plot.map[origin_chunk][origin_coord]["relatedBlock"]["coord"]
+        main_block_chunk = main_block_coord[0] // 10
+        blocks_to_remove = Plot.map[main_block_chunk][main_block_coord]["blockPos"]
+        print(blocks_to_remove)
 #選單
 def show_menu():
     forge_tick = 0
@@ -2890,7 +2976,7 @@ def show_menu():
             pygame.display.set_caption("Finding The Light - Portal")
             def portal_tp(info):
                 for location_name, location_coord in info.items(): 
-                    teleport(location_coord)
+                    teleport(location_coord, GROUND - 50)
                     new_message("已傳送至" + location_name)
                     Areas.changed = True
             def portal_unlock(location):
@@ -3379,10 +3465,16 @@ class Player(pygame.sprite.Sprite):
         self.move_distant = max(self.speed, 0)
         if key_pressed[pygame.K_d] and Player_location.disable_move == False and Player_location.dash_distance == 0:
             self.facing = 1
-            if player.rect.right + self.move_distant <= WIDTH: Player_location.x_move += self.move_distant
+            if Areas.area != -3:
+                if player.rect.right + self.move_distant <= WIDTH: Player_location.x_move += self.move_distant
+            else:
+                Plot.x += self.move_distant
         if key_pressed[pygame.K_a] and Player_location.disable_move == False and Player_location.dash_distance == 0:
             self.facing = -1
-            if player.rect.left - self.move_distant >= 0: Player_location.x_move -= self.move_distant
+            if Areas.area != -3:
+                if player.rect.left - self.move_distant >= 0: Player_location.x_move -= self.move_distant
+            else:
+                Plot.x -= self.move_distant
         #11區移動
         if Area11.x_velocity > 1:
             Player_location.coord_x += 10
@@ -3398,28 +3490,35 @@ class Player(pygame.sprite.Sprite):
             Area11.y_velocity = 0
         if Area11.y_velocity == 0: Player_location.disable_move = False
         #跳躍
+        overworld_ground = GROUND - 50
+        plot_ground = GROUND + 25
+        player_ground = overworld_ground if Areas.area != -3 else plot_ground
+        player_y_level = self.rect.y if Areas.area != -3 else Plot.y
+        if Areas.area == -3: self.rect.centery = 300
         if key_pressed[pygame.K_SPACE] and Player_location.disable_jump == False and player.jump_time > 0:
-            if player.rect.y < GROUND - 50 and player.jump_height == 0: player.holding["jump_wings"] = 15
+            if player_y_level < player_ground and player.jump_height == 0: player.holding["jump_wings"] = 15
             if player.jump_height <= Stats.total["跳躍高度"]:
-                player.rect.y -= 20
+                player_y_level -= 20
                 player.jump_height += 20
         #重製跳躍次數
-        if self.rect.y == GROUND - 50:
+        if player_y_level == player_ground:
             self.jump_time = Stats.total["跳躍次數"]
             Player_location.midair_dash = 1
         #重力加速度
-        if self.rect.y < GROUND - 50 and Player_location.anti_gravity == False and not 0 < self.jump_height < 150 and Player_location.dash_distance == 0 or Player_location.disable_ground:
+        if player_y_level < player_ground and Player_location.anti_gravity == False and not 0 < self.jump_height < 150 and Player_location.dash_distance == 0 or Player_location.disable_ground:
             self.velocity += (GRAVITY * 1 / 20) * self.fall_speed
-            self.rect.y += round(self.velocity)
-        if self.rect.y >= GROUND - 50 and Player_location.disable_ground == False:
+            player_y_level += round(self.velocity)
+        if player_y_level >= player_ground and Player_location.disable_ground == False:
             if self.holding["rise_sword"]:
                 Player.cooldowns["破空突擊"] = 60
                 self.action = "normal"
                 self.fall_speed = 1
                 self.holding["rise_sword"] = 0
-            self.rect.y = GROUND - 50
+            player_y_level = player_ground
             self.velocity = 0
             self.jump_height = 0
+        if Areas.area != -3: self.rect.y = player_y_level
+        else: Plot.y = player_y_level
         #隱身
         if Player.cooldowns["隱身"] > 1: self.image.set_alpha(128)
         elif Player.cooldowns["隱身"] == 1: self.image.set_alpha(256)
@@ -5374,6 +5473,14 @@ class Trade():
         self.show_info = False
         self.click = True
         self.shops = {}
+#玩家基地
+class Plot():
+    def __init__(self):
+        self.map = {}
+        self.x = 0
+        self.y = 0
+        self.chunk = 0
+        self.block_raw_data = {}
 #區域
 class Areas():
     def __init__(self):
@@ -5637,12 +5744,20 @@ Quest_03.stage = 0
 Quest_04.progressing = False
 Quest_04.complete = False
 Quest_04.stage = 0
+Plot.block_raw_data = {"grass_block":{"blockName":"grass_block", "blockSize":(1, 1)},
+                       "doorway":{"blockName":"doorway", "blockSize":(1, 2)}}
+Plot.map = {0:{}}
+for i in range(10):
+    set_block((i, 5), "grass_block")
+set_block((5, 3), "doorway")
+Plot.x = 500
+Plot.y = 500
+Plot.chunk = 0
 Areas.object = {
     -6:{1:{"objPos":(-6750, 350), "objType":"npc", "npcData":{"npcName":"無鋒", "nameColor":WHITE, "npcImg":rogue_charm_shop_img}, "npcOption":{"交易":{"optionType":"trade", "shop":"刺客護符商人"}}, "respawnable":True, "exist":True, "onMap":False},
         2:{"objPos":(-6250, 350), "objType":"door", "linkedCoord":(-5950, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
         3:{"objPos":(-6600, 350), "objType":"door", "linkedCoord":(4500, player.rect.y), "respawnable":True, "exist":True, "onMap":False}},
     -5:{2:{"objPos":(-5850, 350), "objType":"door", "linkedCoord":(-6200, player.rect.y), "respawnable":True, "exist":True, "onMap":False}},
-    -3:{1:{"objPos":(-3500, 350), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":portal_img}, "npcOption":{"傳送":{"optionType":"portal"}}, "respawnable":True, "exist":True, "onMap":False}},
     -2:{1:{"objPos":(-2900, 350), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":portal_img}, "npcOption":{"傳送":{"optionType":"portal"}}, "respawnable":True, "exist":True, "onMap":False},
         2:{"objPos":(-2700, 350), "objType":"door", "linkedCoord":(1500, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
         3:{"objPos":(-2300, 350), "objType":"npc", "npcData":{"npcName":"", "nameColor":WHITE, "npcImg":dmg_indicator_img}, "npcOption":{"選擇技能":{"optionType":"a_tree"}}, "respawnable":True, "exist":True, "onMap":False}},
@@ -5780,7 +5895,6 @@ Player_location.x = 0
 Player_location.y = 0
 Player_location.coord_x = 0
 Player_location.coord_y = 0
-Player_location.background_moving = 0
 Player_location.player_move = False
 #冷卻
 Player.cooldowns = {"health":0, "dash":0,
@@ -6213,7 +6327,10 @@ while running:
         if player.facing == 1: draw_img(screen, player_dash_right_img, player.rect.centerx - 80, player.rect.y + 120)
         if player.facing == -1: draw_img(screen, player_dash_left_img, player.rect.centerx, player.rect.y + 120)
         Damage_to_player.damage = 0
-        if not (player.rect.right + 30 >= WIDTH or player.rect.left - 30 <= 0): Player_location.x_move += (30 * player.facing)
+        if Areas.area != -3:
+            if not (player.rect.right + 30 >= WIDTH or player.rect.left - 30 <= 0): Player_location.x_move += (30 * player.facing)
+        else:
+            if not (player.rect.right + 30 >= WIDTH or player.rect.left - 30 <= 0): Plot.x += (30 * player.facing)
         Player_location.dash_distance -= 30 * player.facing
         if Player_location.dash_distance >= 300 or Player_location.dash_distance <= -300: Player_location.dash_distance = 0
     if time < 60:
@@ -7013,12 +7130,12 @@ while running:
         draw_color_text(screen, "[Lv." + str(Mage.level) + "] 法師", 20, 220, 610, LBLUE)
         draw_passive_bar(screen, Mage.mana * 60, Mage.mana_limit * 60, 170, 690, LBLUE, "魔力")
         draw_passive_bar(screen, Mage.xp * 60, Mage.xp_req * 60, 170, 715, GREEN, "Mage EXP")
+    #除厝資訊
     if Info.open:
-        #顯示座標資訊
-        draw_color_text(screen, "座標: " + str(Player_location.coord_x // 10), 20, 50, 300, BLACK)
-        draw_color_text(screen, "背景: " + str(background_location_x // 10), 20, 50, 330, BLACK)
-        draw_color_text(screen, "區域: " + str(Areas.area), 20, 50, 360, BLACK)
-        draw_color_text(screen, "區域座標: " + str(current_coord_x), 20, 50, 390, BLACK)
+        draw_color_text(screen, "座標: " + str(Player_location.coord_x // 10 if Areas.area != -3 else Plot.x // 100) + ", " + str(player.rect.y // 10 if Areas.area != -3 else Plot.y // 100), 20, 50, 300, BLACK)
+        draw_color_text(screen, "背景: " + str(background_location_x // 10 if Areas.area != -3 else plot_background_location_x), 20, 50, 330, BLACK)
+        draw_color_text(screen, "區域: " + str(Areas.area if Areas.area != -3 else Plot.chunk), 20, 50, 360, BLACK)
+        draw_color_text(screen, "區域座標: " + str(current_coord_x if Areas.area != -3 else Plot.x % 1000 // 100), 20, 50, 390, BLACK)
         for atks in player.attacks:
             pygame.draw.circle(screen, RED, (atks[0], atks[1]), atks[2])
         if Areas.lock_left:draw_color_text(screen, "邊界:左邊", 20, 50, 420, BLACK)
