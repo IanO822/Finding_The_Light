@@ -348,6 +348,8 @@ button_music_on_img = pygame.image.load(os.path.join("resource", "button_music_o
 button_music_off_img = pygame.image.load(os.path.join("resource", "button_music_off.png")).convert()
 button_space_img = pygame.image.load(os.path.join("resource", "button_space.png")).convert()
 button_submit_img = pygame.image.load(os.path.join("resource", "button_submit.png")).convert()
+button_f1_img = pygame.image.load(os.path.join("resource", "button_f1.png")).convert()
+button_f1_img.set_colorkey(WHITE)
 t1_lootchest_img = pygame.image.load(os.path.join("resource", "t1_lootchest.png")).convert()
 t2_lootchest_img = pygame.image.load(os.path.join("resource", "t2_lootchest.png")).convert()
 t3_lootchest_img = pygame.image.load(os.path.join("resource", "t3_lootchest.png")).convert()
@@ -1325,8 +1327,27 @@ def scrolling_background(first_load = False):
         for chunkNum, chunk in chunks_to_draw.items():
             for coord, block in Plot.map[chunk].items():
                 if block.get("blockName", False):
-                    draw_img(screen, plot_block_imgs[block["blockName"]], plot_background_location_x + coord[0] % 10 * 100 + chunkNum * 1000, plot_background_location_y + coord[1] * 100 + 70)
-    remove_block((5, 4))
+                    draw_img(screen, plot_block_imgs[block["blockName"]], plot_background_location_x + coord[0] % 10 * 100 + chunkNum * 1000, plot_background_location_y + coord[1] * 100 + 100)
+        if Plot.edit_mode:
+            # === Step 1: 計算滑鼠在世界中的實際座標 ===
+            world_x = Plot.x - 500 + Mouse.x
+            world_y = Plot.y - 300 + Mouse.y
+
+            # === Step 2: 找出滑鼠目前指到的方塊座標（世界格子） ===
+            block_x = int(world_x // 100)
+            block_y = int(world_y // 100)
+
+            # === Step 3: 將這個方塊轉換回螢幕位置，用來畫框 ===
+            screen_x = 500 - (Plot.x - block_x * 100)
+            screen_y = 300 - (Plot.y - block_y * 100)
+            # === Step 4: 繪製外框（這樣就能對準正確的方塊） ===
+            pygame.draw.rect(screen, (0, 0, 0), (screen_x, screen_y, 100, 100), 5)
+            press_button = pygame.mouse.get_pressed()
+            if (press_button[0]):
+                remove_block((block_x, block_y - 1))
+            elif (press_button[2]):
+                set_block((block_x, block_y - 1), "grass_block")
+
 #圓形冷卻顯示器
 def circle_cd_indicator(x, y, radius, time, total_time, thickness, color = GREEN):
     angle = (time / total_time) * 360
@@ -1557,6 +1578,8 @@ def set_block(origin_coord, blockName):
 def remove_block(origin_coord):
     origin_chunk = origin_coord[0] // 10
     #1x1
+    if not Plot.map[origin_chunk].get(origin_coord, False):
+        return
     if Plot.map[origin_chunk][origin_coord].get("blockSize") == (1, 1):
         del Plot.map[origin_chunk][origin_coord]
     #非1x1
@@ -1564,7 +1587,9 @@ def remove_block(origin_coord):
         main_block_coord = Plot.map[origin_chunk][origin_coord]["relatedBlock"]["coord"]
         main_block_chunk = main_block_coord[0] // 10
         blocks_to_remove = Plot.map[main_block_chunk][main_block_coord]["blockPos"]
-        print(blocks_to_remove)
+        for coord in blocks_to_remove:
+            chunk = coord[0] // 10
+            del Plot.map[chunk][coord]
 #選單
 def show_menu():
     forge_tick = 0
@@ -3494,7 +3519,7 @@ class Player(pygame.sprite.Sprite):
         plot_ground = GROUND + 25
         player_ground = overworld_ground if Areas.area != -3 else plot_ground
         player_y_level = self.rect.y if Areas.area != -3 else Plot.y
-        if Areas.area == -3: self.rect.centery = 300
+        if Areas.area == -3: self.rect.y = 243
         if key_pressed[pygame.K_SPACE] and Player_location.disable_jump == False and player.jump_time > 0:
             if player_y_level < player_ground and player.jump_height == 0: player.holding["jump_wings"] = 15
             if player.jump_height <= Stats.total["跳躍高度"]:
@@ -5481,6 +5506,7 @@ class Plot():
         self.y = 0
         self.chunk = 0
         self.block_raw_data = {}
+        self.edit_mode = False
 #區域
 class Areas():
     def __init__(self):
@@ -5753,6 +5779,7 @@ set_block((5, 3), "doorway")
 Plot.x = 500
 Plot.y = 500
 Plot.chunk = 0
+Plot.edit_mode = False
 Areas.object = {
     -6:{1:{"objPos":(-6750, 350), "objType":"npc", "npcData":{"npcName":"無鋒", "nameColor":WHITE, "npcImg":rogue_charm_shop_img}, "npcOption":{"交易":{"optionType":"trade", "shop":"刺客護符商人"}}, "respawnable":True, "exist":True, "onMap":False},
         2:{"objPos":(-6250, 350), "objType":"door", "linkedCoord":(-5950, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
@@ -6203,11 +6230,10 @@ while running:
             if event.key == pygame.K_c:#角色屬性
                 Stats.open = True
                 menu = True
+            if event.key == pygame.K_F1 and Areas.area == -3:#基地編輯模式
+                Plot.edit_mode = not Plot.edit_mode
             if event.key == pygame.K_F3:#角色屬性
-                if Info.open == False:
-                    Info.open = True
-                else:
-                    Info.open = False
+                Info.open = not Info.open
             if event.key == pygame.K_b and Areas.area == -7:
                 Depth.blessing_menu = True
                 menu = True
@@ -6251,7 +6277,7 @@ while running:
                 elif hovering_r_skill: player.skill(A_tree.keybind[player.weapon - 1]["R" + str(A_tree.row)])
                 elif hovering_s_skill and Inv.selected_item != "": player.use_item(Inv.selected_item) #使用物品
                 elif hovering_q_skill: player.ultimate()
-                else:
+                elif Plot.edit_mode == False or Areas.area != -3:
                     if Mouse.x > player.rect.x: player.facing = 1
                     if Mouse.x < player.rect.x: player.facing = -1
                     player.main_attack()
@@ -6267,7 +6293,7 @@ while running:
                     Info.open = True
                 else:
                     Info.open = False
-        if (press_button[2]) and Player.cooldowns["dash"] == 0 and Player_location.disable_move == False and Player_location.midair_dash and player.holding["food"] == 0:
+        if (press_button[2]) and Player.cooldowns["dash"] == 0 and Player_location.disable_move == False and Player_location.midair_dash and player.holding["food"] == 0 and (Plot.edit_mode == False or Areas.area != -3):
             Player_location.midair_dash -= 1
             Player.cooldowns["dash"] += 20
             Player_location.dash_distance = player.facing * 300
@@ -7050,6 +7076,12 @@ while running:
         if key.startswith("S"): x = 820 + 20
         if key.startswith("Q"): x = 930 + 20
         outline_text(stack, 40, x, 620, WHITE)
+    #玩家基地按鍵
+    if Areas.area == -3:
+        outline_text("建造模式", 15, 923, 505, WHITE)
+        draw_img(screen, button_f1_img, 930, 530)
+        outline_text("開啟" if Plot.edit_mode else "關閉", 15, 940, 575, WHITE)
+        
     #狀態效果顯示欄
     effect_imgs = {"生命回復":icon_health_regen_img, "移動速度":icon_speed_img, "腥紅收割":icon_crimson_harvest_img}
     effect_map = {"移動速度":0.1}
