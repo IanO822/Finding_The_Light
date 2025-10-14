@@ -19,6 +19,7 @@ GRAVITY = 10
 GROUND = 475
 LORE_WIDTH = 500
 LORE_HEIGHT = 500
+PLOT_HEIGHT_LIMIT = (-500, 500)
 #顏色
 BLACK = 0, 0, 0
 WHITE = 255, 255, 255
@@ -1312,11 +1313,12 @@ def scrolling_background(first_load = False):
         global plot_background_location_x, plot_background_location_y
         Plot.chunk = Plot.x // 1000
         plot_background_location_x = 500 - (Plot.x % 1000)
-        plot_background_location_y = 300 - (Plot.y % 600)
-        #讀取區塊，如果沒有澤生成
+        plot_background_location_y = 300 - Plot.y
+        #讀取區塊，如果沒有則生成
         for k in [-1, 0, 1]:
-            if not Plot.map.get(Plot.chunk + k, False):
+            if not Plot.map.get(Plot.chunk + k, False) and (Plot.chunk + k) not in Plot.spawned_chunks:
                 Plot.map[Plot.chunk + k] = {}
+                Plot.spawned_chunks.add(Plot.chunk + k)
                 for i in range(10):
                     set_block(((Plot.chunk + k) * 10 + i, 5), "grass_block")
         #繪製區塊
@@ -1328,26 +1330,42 @@ def scrolling_background(first_load = False):
             for coord, block in Plot.map[chunk].items():
                 if block.get("blockName", False):
                     draw_img(screen, plot_block_imgs[block["blockName"]], plot_background_location_x + coord[0] % 10 * 100 + chunkNum * 1000, plot_background_location_y + coord[1] * 100 + 100)
-        if Plot.edit_mode:
-            # === Step 1: 計算滑鼠在世界中的實際座標 ===
-            world_x = Plot.x - 500 + Mouse.x
-            world_y = Plot.y - 300 + Mouse.y
-
-            # === Step 2: 找出滑鼠目前指到的方塊座標（世界格子） ===
-            block_x = int(world_x // 100)
-            block_y = int(world_y // 100)
-
-            # === Step 3: 將這個方塊轉換回螢幕位置，用來畫框 ===
-            screen_x = 500 - (Plot.x - block_x * 100)
-            screen_y = 300 - (Plot.y - block_y * 100)
-            # === Step 4: 繪製外框（這樣就能對準正確的方塊） ===
-            pygame.draw.rect(screen, (0, 0, 0), (screen_x, screen_y, 100, 100), 5)
-            press_button = pygame.mouse.get_pressed()
-            if (press_button[0]):
-                remove_block((block_x, block_y - 1))
-            elif (press_button[2]):
-                set_block((block_x, block_y - 1), "grass_block")
-
+        hovering_block_data = draw_hovering_block_outline(Plot.edit_mode)
+        hovering_block_coord = hovering_block_data[:2]
+        hovering_block_chunk = hovering_block_coord[0] // 10
+        interactable = hovering_block_data[2]
+        press_button = pygame.mouse.get_pressed()
+        if (press_button[0]):
+            if Plot.edit_mode:
+                remove_block(hovering_block_coord)
+            elif interactable:
+                Plot.block_function = Plot.map[hovering_block_chunk][hovering_block_coord]["function"]
+        elif (press_button[2]):
+            if Plot.edit_mode:
+                set_block(hovering_block_coord, "grass_block", "air")
+#畫出方塊邊框
+def draw_hovering_block_outline(is_edit_mode):
+    color = BLACK
+    #計算滑鼠在世界中的實際座標
+    world_x = Plot.x - 500 + Mouse.x
+    world_y = Plot.y - 300 + Mouse.y
+    #找出滑鼠目前指到的方塊座標
+    block_x = int(world_x // 100)
+    block_y = int(world_y // 100)
+    block_range = get_block_range((block_x, block_y - 1))
+    outline_length = (abs(block_range[0][0] - block_range[1][0])) * 100
+    outline_height = (abs(block_range[0][1] - block_range[1][1])) * 100
+    left_top = block_range[0]
+    #非建築模式功能方塊為綠色外框
+    if not is_edit_mode and Plot.map.get(left_top[0] // 10, {}).get((left_top[0], left_top[1]), {}).get("function", False):
+        color = GREEN
+    #將這個方塊轉換回螢幕位置
+    screen_x = 500 - (Plot.x - left_top[0] * 100)
+    screen_y = 300 - (Plot.y - left_top[1] * 100) + 100
+    #繪製外框
+    if is_edit_mode or color == GREEN:
+        pygame.draw.rect(screen, color, (screen_x, screen_y, outline_length, outline_height), 5)
+    return (block_x, block_y - 1, color == GREEN)
 #圓形冷卻顯示器
 def circle_cd_indicator(x, y, radius, time, total_time, thickness, color = GREEN):
     angle = (time / total_time) * 360
@@ -1533,16 +1551,30 @@ def manage_map_obj(objData, manage = "生成"):
 #取得區塊內方塊
 def get_chuck_block(chunk):
     return Plot.map[chunk]
-#取得特定座標方塊
+#取得特定座標方塊資訊
 def get_block_data(coord):
     return Plot.map[(coord[0] // 10)][coord]
+#取得特定座標方塊範圍
+def get_block_range(coord):
+    related_block = Plot.map.get(coord[0] // 10, {}).get(coord, {}).get("relatedBlock", False)
+    if related_block:
+        main_block_coord = related_block["coord"]
+        main_block_size = Plot.map[main_block_coord[0] // 10][main_block_coord]["blockSize"]
+        return (main_block_coord, (main_block_coord[0] + main_block_size[0], main_block_coord[1] + main_block_size[1]))
+    else:
+        return (coord, (coord[0] + 1, coord[1] + 1))
 #放置方塊
-def set_block(origin_coord, blockName):
+def set_block(origin_coord, blockName, onlyReplace = ""):
+    if not PLOT_HEIGHT_LIMIT[0] <= origin_coord[1] <= PLOT_HEIGHT_LIMIT[1]:
+        return
     origin_chunk = origin_coord[0] // 10
-    
+    target_block_data = Plot.map.get(origin_chunk, {}).get(origin_coord, {"relatedBlock":{"name":"air"}})
+    if onlyReplace in target_block_data["relatedBlock"]["name"]:
+        remove_block(origin_coord)
+    else:
+        return
     # 深拷貝主方塊資料
     main_block = copy.deepcopy(Plot.block_raw_data[blockName])
-    
     # 初始化 blockPos
     main_block["blockPos"] = []
     
@@ -1572,8 +1604,10 @@ def set_block(origin_coord, blockName):
                 # 更新 relatedBlock
                 Plot.map[current_chunk][block_coord]["relatedBlock"] = {
                     "name": blockName,
-                    "coord": origin_coord
+                    "coord": origin_coord,
                 }
+                if "function" in main_block:
+                    Plot.map[current_chunk][block_coord]["function"] = main_block["function"]
 #移除方塊
 def remove_block(origin_coord):
     origin_chunk = origin_coord[0] // 10
@@ -3520,6 +3554,13 @@ class Player(pygame.sprite.Sprite):
         player_ground = overworld_ground if Areas.area != -3 else plot_ground
         player_y_level = self.rect.y if Areas.area != -3 else Plot.y
         if Areas.area == -3: self.rect.y = 243
+        #飛行模式
+        if Plot.edit_mode:
+            Player_location.disable_jump = True
+            if key_pressed[pygame.K_SPACE]:
+                Plot.y -= 10
+            elif key_pressed[pygame.K_x]:
+                Plot.y += 10
         if key_pressed[pygame.K_SPACE] and Player_location.disable_jump == False and player.jump_time > 0:
             if player_y_level < player_ground and player.jump_height == 0: player.holding["jump_wings"] = 15
             if player.jump_height <= Stats.total["跳躍高度"]:
@@ -3543,7 +3584,7 @@ class Player(pygame.sprite.Sprite):
             self.velocity = 0
             self.jump_height = 0
         if Areas.area != -3: self.rect.y = player_y_level
-        else: Plot.y = player_y_level
+        elif not Plot.edit_mode: Plot.y = player_y_level
         #隱身
         if Player.cooldowns["隱身"] > 1: self.image.set_alpha(128)
         elif Player.cooldowns["隱身"] == 1: self.image.set_alpha(256)
@@ -5505,8 +5546,10 @@ class Plot():
         self.x = 0
         self.y = 0
         self.chunk = 0
+        self.spawned_chunks = {}
         self.block_raw_data = {}
         self.edit_mode = False
+        self.block_function = ""
 #區域
 class Areas():
     def __init__(self):
@@ -5771,7 +5814,7 @@ Quest_04.progressing = False
 Quest_04.complete = False
 Quest_04.stage = 0
 Plot.block_raw_data = {"grass_block":{"blockName":"grass_block", "blockSize":(1, 1)},
-                       "doorway":{"blockName":"doorway", "blockSize":(1, 2)}}
+                       "doorway":{"blockName":"doorway", "blockSize":(1, 2), "function":"portal"}}
 Plot.map = {0:{}}
 for i in range(10):
     set_block((i, 5), "grass_block")
@@ -5780,6 +5823,8 @@ Plot.x = 500
 Plot.y = 500
 Plot.chunk = 0
 Plot.edit_mode = False
+Plot.block_function = ""
+Plot.spawned_chunks = {0}
 Areas.object = {
     -6:{1:{"objPos":(-6750, 350), "objType":"npc", "npcData":{"npcName":"無鋒", "nameColor":WHITE, "npcImg":rogue_charm_shop_img}, "npcOption":{"交易":{"optionType":"trade", "shop":"刺客護符商人"}}, "respawnable":True, "exist":True, "onMap":False},
         2:{"objPos":(-6250, 350), "objType":"door", "linkedCoord":(-5950, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
@@ -6232,6 +6277,7 @@ while running:
                 menu = True
             if event.key == pygame.K_F1 and Areas.area == -3:#基地編輯模式
                 Plot.edit_mode = not Plot.edit_mode
+                Player_location.disable_jump = False
             if event.key == pygame.K_F3:#角色屬性
                 Info.open = not Info.open
             if event.key == pygame.K_b and Areas.area == -7:
@@ -7081,7 +7127,10 @@ while running:
         outline_text("建造模式", 15, 923, 505, WHITE)
         draw_img(screen, button_f1_img, 930, 530)
         outline_text("開啟" if Plot.edit_mode else "關閉", 15, 940, 575, WHITE)
-        
+        if Plot.block_function == "portal":
+            Portal.open = True
+            menu = True
+            Plot.block_function = ""
     #狀態效果顯示欄
     effect_imgs = {"生命回復":icon_health_regen_img, "移動速度":icon_speed_img, "腥紅收割":icon_crimson_harvest_img}
     effect_map = {"移動速度":0.1}
