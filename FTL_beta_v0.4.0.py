@@ -72,7 +72,7 @@ try:
 except:
     None
 #全螢幕
-FULLSCREEN = True
+FULLSCREEN = False
 
 if FULLSCREEN:
     info = pygame.display.Info()
@@ -571,12 +571,28 @@ dd_boss_img = pygame.image.load(os.path.join("resource", "dd_boss.png")).convert
 depth_room_background_img = {"起始房間1":dd_start_img[0], "起始房間2":dd_start_img[1], "起始房間3":dd_start_img[2], "廢棄下水道":dd_abandoned_sewer_img, "假扮商隊":dd_start_img[0], "攻擊守衛":dd_start_img[0] ,"魔王1":dd_boss_challenge_1_img, "魔王2":dd_boss_challenge_2_img, "魔王3":dd_boss_challenge_3_img, "獎勵房":dd_reward_img}
 depth_room_icon = {"戰鬥":depth_combat_img, "事件":depth_event_img, "黑市":depth_market_img, "挑戰":depth_challenge_img, "魔王":dd_boss_img, "廢棄下水道":depth_sewer_img, "假扮商隊":depth_disguiseMerchant_img, "攻擊守衛":depth_attackGuard_img, "魔王1":dd_boss_img, "魔王2":dd_boss_img, "魔王3":dd_boss_img}
 #玩家基地 - 方塊
-plot_block_list = ["grass_block", "doorway"]
+plot_block_list = ["草地", "傳送門"]
 plot_block_imgs = {}
+inventory_block_imgs = {}
 for block in plot_block_list:
-    block_img = pygame.image.load(os.path.join("resource", f"{block}.png")).convert()
+    block_img = pygame.image.load(os.path.join("resource", f"build_{block}.png")).convert()
+    origin_size = block_img.get_size()
     block_img.set_colorkey(GREEN)
     plot_block_imgs.update({block:block_img})
+    block_width = block_img.get_width()
+    block_height = block_img.get_height()
+    block_wh = block_width / block_height
+    new_bg = pygame.Surface((90, 90))
+    new_bg.fill(COMMON)
+    if block_wh >= 1: # 寬 >/= 長
+        new_block_img = pygame.transform.scale(block_img, (90, 90 / block_wh))
+        new_bg.blit(new_block_img, (0, (45-(90 / block_wh / 2))))
+    elif 0 < block_wh < 1: #長 > 寬
+        new_block_img = pygame.transform.scale(block_img, (90 * block_wh, 90))
+        new_bg.blit(new_block_img, (45-(block_wh * 90 / 2), 0))
+    inventory_block_imgs.update({block:new_bg})
+def inv_block(block):
+    return inventory_block_imgs[block]
 #背景
 area_background_imgs = {}
 special_areas = [6, 8, 12, 16]
@@ -956,16 +972,14 @@ def remove_zero(arr):
     return arr
 #裝備物品
 def equip_item(item, item_type, charm_slot_cost = 0):
-    if item_type not in ["sword", "bow", "wand" ,"charm", "consumable", "questItem"]:
-        pass
-    elif item_type in ["sword", "bow", "wand"]:
+    if item_type in ["sword", "bow", "wand"]:
         Inv.equip[item_type] = item["name"]
     elif item_type == "consumable":
         if is_item_equipped(item):
             Inv.equip["hotbar"].remove(item["name"])
         elif len(Inv.equip["hotbar"][1:]) < 4:
             Inv.equip["hotbar"].append(item["name"])
-    elif item_type in ["charm", "questItem"]:
+    elif item_type in ["charm", "questItem", "block"]:
         if item["name"] in Inv.equip[item_type]:
             Inv.equip[item_type].remove(item["name"])
             Inv.charm_slot[0] -= charm_slot_cost 
@@ -1320,7 +1334,7 @@ def scrolling_background(first_load = False):
                 Plot.map[Plot.chunk + k] = {}
                 Plot.spawned_chunks.add(Plot.chunk + k)
                 for i in range(10):
-                    set_block(((Plot.chunk + k) * 10 + i, 5), "grass_block")
+                    set_block(((Plot.chunk + k) * 10 + i, 5), "草地")
         #繪製區塊
         if Plot.x % 1000 <= 500:
             chunks_to_draw = {0:Plot.chunk, -1:Plot.chunk - 1}
@@ -1337,12 +1351,17 @@ def scrolling_background(first_load = False):
         press_button = pygame.mouse.get_pressed()
         if (press_button[0]):
             if Plot.edit_mode:
-                remove_block(hovering_block_coord)
+                if get_block_data(hovering_block_coord):
+                    related_block_coord = Plot.map[hovering_block_chunk][hovering_block_coord]["relatedBlock"]["coord"]
+                    related_block_chunk = related_block_coord[0] // 10
+                    player.gain_item(Plot.map[related_block_chunk][related_block_coord]["blockName"], 1, True)
+                    remove_block(related_block_coord)
             elif interactable:
                 Plot.block_function = Plot.map[hovering_block_chunk][hovering_block_coord]["function"]
         elif (press_button[2]):
             if Plot.edit_mode:
-                set_block(hovering_block_coord, "grass_block", "air")
+                if search_item(Inv.equip["block"][Plot.hotbar_idx])["count"] >= 1 and set_block(hovering_block_coord, Inv.equip["block"][Plot.hotbar_idx], "air"):
+                    player.gain_item(Inv.equip["block"][Plot.hotbar_idx], -1, True)
 #畫出方塊邊框
 def draw_hovering_block_outline(is_edit_mode):
     color = BLACK
@@ -1553,7 +1572,7 @@ def get_chuck_block(chunk):
     return Plot.map[chunk]
 #取得特定座標方塊資訊
 def get_block_data(coord):
-    return Plot.map[(coord[0] // 10)][coord]
+    return Plot.map.get((coord[0] // 10), {}).get(coord, False)
 #取得特定座標方塊範圍
 def get_block_range(coord):
     related_block = Plot.map.get(coord[0] // 10, {}).get(coord, {}).get("relatedBlock", False)
@@ -1566,48 +1585,43 @@ def get_block_range(coord):
 #放置方塊
 def set_block(origin_coord, blockName, onlyReplace = ""):
     if not PLOT_HEIGHT_LIMIT[0] <= origin_coord[1] <= PLOT_HEIGHT_LIMIT[1]:
-        return
+        return False
     origin_chunk = origin_coord[0] // 10
     target_block_data = Plot.map.get(origin_chunk, {}).get(origin_coord, {"relatedBlock":{"name":"air"}})
     if onlyReplace in target_block_data["relatedBlock"]["name"]:
         remove_block(origin_coord)
     else:
-        return
-    # 深拷貝主方塊資料
+        return False
+    
     main_block = copy.deepcopy(Plot.block_raw_data[blockName])
-    # 初始化 blockPos
-    main_block["blockPos"] = []
-    
-    # 主方塊也加入 relatedBlock
+    main_block["blockPos"] = [origin_coord]
     main_block["relatedBlock"] = {"name": blockName, "coord": origin_coord}
-    
-    # 放入地圖
-    Plot.map[origin_chunk][origin_coord] = main_block
-    
     block_length, block_height = Plot.block_raw_data[blockName]["blockSize"]
-    
-    # 處理每個格子
+    blocks_to_place = []
+    #檢查範圍內是否有方塊
     for i in range(block_height):
         for j in range(block_length):
             block_coord = (origin_coord[0] + j, origin_coord[1] + i)
-            current_chunk = block_coord[0] // 10
-            
-            # 更新主方塊 blockPos
-            Plot.map[origin_chunk][origin_coord]["blockPos"].append(block_coord)
-            
-            # 非主方塊格子
-            if block_coord != origin_coord:
-                # 如果該格子不存在，先初始化
-                if block_coord not in Plot.map[current_chunk]:
-                    Plot.map[current_chunk][block_coord] = {}
-                
-                # 更新 relatedBlock
-                Plot.map[current_chunk][block_coord]["relatedBlock"] = {
-                    "name": blockName,
-                    "coord": origin_coord,
-                }
-                if "function" in main_block:
-                    Plot.map[current_chunk][block_coord]["function"] = main_block["function"]
+            if not get_block_data(block_coord):
+                blocks_to_place.append(block_coord)
+            else:
+                return False
+    
+    # 開始放置
+    Plot.map[origin_chunk][origin_coord] = main_block
+    for block_coord in blocks_to_place:
+        current_chunk = block_coord[0] // 10
+        Plot.map[origin_chunk][origin_coord]["blockPos"].append(block_coord)
+        # 非主方塊格子
+        if block_coord != origin_coord:
+            Plot.map[current_chunk][block_coord] = {}
+            Plot.map[current_chunk][block_coord]["relatedBlock"] = {
+                "name": blockName,
+                "coord": origin_coord,
+            }
+            if "function" in main_block:
+                Plot.map[current_chunk][block_coord]["function"] = main_block["function"]
+    return True
 #移除方塊
 def remove_block(origin_coord):
     origin_chunk = origin_coord[0] // 10
@@ -1623,7 +1637,8 @@ def remove_block(origin_coord):
         blocks_to_remove = Plot.map[main_block_chunk][main_block_coord]["blockPos"]
         for coord in blocks_to_remove:
             chunk = coord[0] // 10
-            del Plot.map[chunk][coord]
+            if Plot.map.get(chunk, {}).get(coord, False):
+                del Plot.map[chunk][coord]
 #選單
 def show_menu():
     forge_tick = 0
@@ -2266,8 +2281,8 @@ def show_menu():
             if Inv.type == "normal": inventory = Inv.inventory
             elif Inv.type == "load": inventory = Inv.preview
             def draw_inventory_category(cate, mouse_x, mouse_y):
-                cateName = ["武器", "裝備", "護符", "貨幣", "戰利品", "消耗品", "任務道具"]
-                for i in range(7):
+                cateName = ["武器", "裝備", "護符", "貨幣", "戰利品", "消耗品", "任務道具", "建築方塊"]
+                for i in range(8):
                     pygame.draw.line(screen, BLACK, (35 + i * 94, 158), (35 + 96 + i * 94, 158), 4)
                     pygame.draw.line(screen, BLACK, (35 + i * 94, 158), (35 + i * 94, 188), 4)
                     pygame.draw.line(screen, BLACK, (35 + 94 + i * 94, 158), (35 + 94 + i * 94, 188), 4)
@@ -2338,6 +2353,26 @@ def show_menu():
                 elif Inv.cate == 7:
                     pygame.display.set_caption("Finding The Light - Inventory (Quest Items)")
                     draw_items(["questItem"])
+                elif Inv.cate == 8:
+                    pygame.display.set_caption("Finding The Light - Inventory (Block)")
+                    draw_items(["block"])
+                    #顯示方塊槽
+                    drawing_blocks = []
+                    for i in range(len(Inv.equip["block"]) if Inv.type == "normal" else len(Inv.equip_preview["block"])):
+                        drawing_blocks.append((Inv.equip["block"][i]) if Inv.type == "normal" else (Inv.equip_preview["block"][i]))
+                    for i in range(9):
+                        pygame.draw.rect(screen, AGRAY, (17 + i * 110, 627, 96, 96))
+                        pygame.draw.rect(screen, BLACK, (17 + i * 110, 627, 96, 96), 3)
+                    #顯示方塊圖示
+                    for i in range(len(drawing_blocks)):
+                        block_data = search_item(drawing_blocks[i])
+                        draw_img(screen, block_data["img"], 20 + i * 110, 630)
+                    for i in range(len(drawing_blocks)):
+                        if is_hovering(30 + i * 110, 130 + i * 110, 630, 720, mouse_x, mouse_y):
+                            inv_item_text(drawing_blocks[i])
+                    #卸下用完方塊
+                    for block in Inv.equip["block"]:
+                        if search_item(block)["count"] <= 0: Inv.equip["block"].remove(block)
             def draw_items(itemCate):
                 drawing_items = []
                 for item in inventory:
@@ -2365,7 +2400,7 @@ def show_menu():
                 #裝備欄
                 pygame.draw.rect(screen, DCGRAY, (0, 600, 1000, 150))
                 pygame.draw.rect(screen, BLACK, (0, 600, 1000, 150), 5)
-                if Inv.cate != 3:
+                if Inv.cate not in [3, 8]:
                     for i in range(5):
                         pygame.draw.rect(screen, AGRAY, (17 + i * 110, 627, 96, 96))
                         pygame.draw.rect(screen, WHITE if i == 0 else BLACK, (17 + i * 110, 627, 96, 96), 3)
@@ -2387,7 +2422,7 @@ def show_menu():
                 Inv.info_loc_y = mouse_y if mouse_y - 500 > 0 else mouse_y - 100
                 if mouse_y + 300 >= HEIGHT: Inv.info_loc_y = mouse_y - 300
                 draw_inventory_category(Inv.cate, mouse_x, mouse_y)
-            hovering_inventory_buttons = [is_hovering(35 + i * 94, 35 + 96 + i * 94, 158, 188, mouse_x, mouse_y) for i in range(7)]
+            hovering_inventory_buttons = [is_hovering(35 + i * 94, 35 + 96 + i * 94, 158, 188, mouse_x, mouse_y) for i in range(8)]
             inventory_screen(mouse_x, mouse_y)
             Inv.use = False
             pygame.display.update()
@@ -5550,6 +5585,8 @@ class Plot():
         self.block_raw_data = {}
         self.edit_mode = False
         self.block_function = ""
+        self.hovering_idx = {}
+        self.hotbar_idx = {}
 #區域
 class Areas():
     def __init__(self):
@@ -5813,18 +5850,20 @@ Quest_03.stage = 0
 Quest_04.progressing = False
 Quest_04.complete = False
 Quest_04.stage = 0
-Plot.block_raw_data = {"grass_block":{"blockName":"grass_block", "blockSize":(1, 1)},
-                       "doorway":{"blockName":"doorway", "blockSize":(1, 2), "function":"portal"}}
+Plot.block_raw_data = {"草地":{"blockName":"草地", "blockSize":(1, 1)},
+                       "傳送門":{"blockName":"傳送門", "blockSize":(1, 2), "function":"portal"}}
 Plot.map = {0:{}}
 for i in range(10):
-    set_block((i, 5), "grass_block")
-set_block((5, 3), "doorway")
+    set_block((i, 5), "草地")
+set_block((5, 3), "傳送門")
 Plot.x = 500
 Plot.y = 500
 Plot.chunk = 0
 Plot.edit_mode = False
 Plot.block_function = ""
 Plot.spawned_chunks = {0}
+Plot.hovering_idx = {i:False for i in range(9)}
+Plot.hotbar_idx = 0
 Areas.object = {
     -6:{1:{"objPos":(-6750, 350), "objType":"npc", "npcData":{"npcName":"無鋒", "nameColor":WHITE, "npcImg":rogue_charm_shop_img}, "npcOption":{"交易":{"optionType":"trade", "shop":"刺客護符商人"}}, "respawnable":True, "exist":True, "onMap":False},
         2:{"objPos":(-6250, 350), "objType":"door", "linkedCoord":(-5950, player.rect.y), "respawnable":True, "exist":True, "onMap":False},
@@ -6023,7 +6062,7 @@ Player.name = "Player"
 Inv.open = False
 Inv.cate = 1
 Inv.use = False
-Inv.equip = {"sword":"粗鐵劍", "bow":"木製弓", "wand":"基礎魔杖", "helmet":"", "armor":"", "legs":"", "boots":"", "charm":[], "questItem":[], "hotbar":["粗鐵劍"]}
+Inv.equip = {"sword":"粗鐵劍", "bow":"木製弓", "wand":"基礎魔杖", "helmet":"", "armor":"", "legs":"", "boots":"", "charm":[], "questItem":[], "hotbar":["粗鐵劍"], "block":[]}
 Inv.charm_slot = [0, 3]
 Inv.showing_charm = {"name":[], "img":[], "count":[]}
 Inv.invload = []
@@ -6065,7 +6104,10 @@ Inv.inventory = [
     {"name":"生命水晶", "itemType":"questItem", "rarity":LEGENDARY, "img":item_crystal_of_life_img, "special":True, "count":0, "location":{"locationName":"黑暗勢力的威脅 任務道具", "locationColor":PURPLE}, "attribute":{"生命上限%":30}, "itemLore":["紀念碑物品 1/7"], "equip":True},
     {"name":"力量水晶", "itemType":"questItem", "rarity":LEGENDARY, "img":item_crystal_of_strength_img, "special":True, "count":0, "location":{"locationName":"星疫之災 任務道具", "locationColor":TEAL}, "attribute":{"攻擊力%":30}, "itemLore":["紀念碑物品 2/7"], "equip":True},
     {"name":"極光之翼", "itemType":"questItem", "rarity":LEGENDARY, "img":item_aurora_wing_img, "special":True, "count":0, "location":{"locationName":"星疫之災 任務道具", "locationColor":TEAL}, "attribute":{"跳躍次數":1}, "itemLore":["蘊含天堂之力的光輝之翼", "當你展開它，七彩的光芒將照亮前方的道路", "引領你飛向更高的境界"], "equip":True},
-    {"name":"腥紅刀片", "itemType":"questItem", "rarity":RARE, "img":item_crimson_blade_img, "special":False, "count":0, "location":{"locationName":"黑暗王座的終焉 任務道具", "locationColor":RED}, "itemLore":["將十個刀片交給鐵匠即可復原..."], "equip":False}
+    {"name":"腥紅刀片", "itemType":"questItem", "rarity":RARE, "img":item_crimson_blade_img, "special":False, "count":0, "location":{"locationName":"黑暗王座的終焉 任務道具", "locationColor":RED}, "itemLore":["將十個刀片交給鐵匠即可復原..."], "equip":False},
+    #建築方塊
+    {"name":"草地", "itemType":"block", "rarity":COMMON, "img":inv_block("草地"), "special":False, "count":0, "location":{"locationName":"玩家基地 建築方塊", "locationColor":GREEN}, "equip":True},
+    {"name":"傳送門", "itemType":"block", "rarity":COMMON, "img":inv_block("傳送門"), "special":False, "count":0, "location":{"locationName":"玩家基地 建築方塊", "locationColor":GREEN}, "equip":True}
 ]
 Inv.preview = [{k: (v.copy() if isinstance(v, pygame.Surface) else copy.deepcopy(v)) for k, v in item.items()} for item in Inv.inventory]
 Inv.hotbar_index = 0
@@ -6239,7 +6281,7 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.KEYDOWN:
-            if player.holding["food"] == 0:
+            if player.holding["food"] == 0 and Plot.edit_mode == False: #disable ability&class
                 if event.key == pygame.K_1: player.weapon = 1 #刺客
                 if event.key == pygame.K_2: player.weapon = 2 #弓箭手
                 if event.key == pygame.K_3: player.weapon = 3 #法師
@@ -6299,25 +6341,29 @@ while running:
                 Mouse.pressed = True
             if event.button == 2: A_tree.row = 3 - A_tree.row
             if event.button in (4, 5) and any(Inv.equip["hotbar"]):
-                original_index = Inv.hotbar_index  # 記錄當前 hotbar_index，避免無限循環
-                direction = -1 if event.button == 4 else 1  # 4=向上滾，5=向下滾
-                while True:
-                    # 變更 hotbar_index，確保循環
-                    Inv.hotbar_index = (Inv.hotbar_index + direction) % len(Inv.equip["hotbar"])
-                    # 確保當前選擇的是有效物品
-                    if Inv.equip["hotbar"][Inv.hotbar_index] != "": break  # 找到有效物品則停止
-                    # 如果繞了一圈仍然找不到有效物品，則保持原位
-                    if Inv.hotbar_index == original_index: break
-                # 設定選擇標誌，開始計時
-                Inv.hotbar_selecting = True
-                Inv.hotbar_selection_timer = 0
+                if Plot.edit_mode:
+                    Plot.hotbar_idx += (-1 if event.button == 4 else 1)
+                    Plot.hotbar_idx %= 9
+                else:
+                    original_index = Inv.hotbar_index  # 記錄當前 hotbar_index，避免無限循環
+                    direction = -1 if event.button == 4 else 1  # 4=向上滾，5=向下滾
+                    while True:
+                        # 變更 hotbar_index，確保循環
+                        Inv.hotbar_index = (Inv.hotbar_index + direction) % len(Inv.equip["hotbar"])
+                        # 確保當前選擇的是有效物品
+                        if Inv.equip["hotbar"][Inv.hotbar_index] != "": break  # 找到有效物品則停止
+                        # 如果繞了一圈仍然找不到有效物品，則保持原位
+                        if Inv.hotbar_index == original_index: break
+                    # 設定選擇標誌，開始計時
+                    Inv.hotbar_selecting = True
+                    Inv.hotbar_selection_timer = 0
         Mouse.released = False
         if event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
                 Mouse.released = True
         press_button = pygame.mouse.get_pressed()
         if (press_button[0]):
-            if player.holding["food"] == 0:
+            if player.holding["food"] == 0 and Plot.edit_mode == False:
                 if hovering_w_skill: player.skill(A_tree.keybind[player.weapon - 1]["W" + str(A_tree.row)])
                 elif hovering_e_skill: player.skill(A_tree.keybind[player.weapon - 1]["E" + str(A_tree.row)])
                 elif hovering_r_skill: player.skill(A_tree.keybind[player.weapon - 1]["R" + str(A_tree.row)])
@@ -6339,6 +6385,8 @@ while running:
                     Info.open = True
                 else:
                     Info.open = False
+            for i, j in Plot.hovering_idx.items():
+                if j: Plot.hotbar_idx = i
         if (press_button[2]) and Player.cooldowns["dash"] == 0 and Player_location.disable_move == False and Player_location.midair_dash and player.holding["food"] == 0 and (Plot.edit_mode == False or Areas.area != -3):
             Player_location.midair_dash -= 1
             Player.cooldowns["dash"] += 20
@@ -6992,7 +7040,7 @@ while running:
         hovering_backpack = is_hovering(820, 900, 10, 70, Mouse.x, Mouse.y)
         hovering_stats = is_hovering(740, 800, 10, 60, Mouse.x, Mouse.y)
         hovering_info = is_hovering(660, 720, 10, 70, Mouse.x, Mouse.y)
-    #快捷欄
+    #--------------- 快捷欄 --------------
     if player.health > 0 and player.health_limit > 0:
         draw_img(screen, hotbar_img, 0, 600)
         draw_color_text(screen, Player.name, 20, 370, 610, LBLUE)
@@ -7034,7 +7082,7 @@ while running:
         # 如果選中的物品被移除，則 hotbar_index 需要調整
         if Inv.hotbar_index >= len(Inv.equip["hotbar"]): Inv.hotbar_index = max(0, len(Inv.equip["hotbar"]) - 1)  # 防止 hotbar_index 超出範圍
 
-         # 計算有效物品數量（不包括 hotbar[0] 的空佔位符）
+        # 計算有效物品數量（不包括 hotbar[0] 的空佔位符）
         hotbar_item_count = len([item for item in Inv.equip["hotbar"] if item != ""])
         # 取得目前選中的物品，並處理找不到物品的情況
         Inv.selected_item = search_item(Inv.equip["hotbar"][Inv.hotbar_index])
@@ -7211,7 +7259,28 @@ while running:
         draw_color_text(screen, "[Lv." + str(Mage.level) + "] 法師", 20, 220, 610, LBLUE)
         draw_passive_bar(screen, Mage.mana * 60, Mage.mana_limit * 60, 170, 690, LBLUE, "魔力")
         draw_passive_bar(screen, Mage.xp * 60, Mage.xp_req * 60, 170, 715, GREEN, "Mage EXP")
-    #除厝資訊
+    if Plot.edit_mode:
+        pygame.draw.rect(screen, DCGRAY, (0, 600, 1000, 150))
+        pygame.draw.rect(screen, BLACK, (0, 600, 1000, 150), 5)
+        drawing_blocks = []
+        for i in range(len(Inv.equip["block"])):
+            drawing_blocks.append((Inv.equip["block"][i]))
+        for i in range(9):
+            pygame.draw.rect(screen, AGRAY, (17 + i * 110, 627, 96, 96))
+            pygame.draw.rect(screen, BLACK if i != Plot.hotbar_idx else WHITE, (17 + i * 110, 627, 96, 96), 3)
+            #顯示方塊圖示
+        for i in range(len(drawing_blocks)):
+            block_data = search_item(drawing_blocks[i])
+            draw_img(screen, block_data["img"], 20 + i * 110, 630)
+            outline_text(str(block_data["count"]), 25, i * 110 + 25, 685, WHITE)
+            if block_data["count"] <= 0:
+                Inv.equip["block"].remove(block_data["name"])
+        for i in range(len(drawing_blocks)):
+            if is_hovering(30 + i * 110, 130 + i * 110, 630, 720, mouse_x, mouse_y):
+                Plot.hovering_idx[i] = True
+            else:
+                Plot.hovering_idx[i] = False
+    #除錯資訊
     if Info.open:
         draw_color_text(screen, "座標: " + str(Player_location.coord_x // 10 if Areas.area != -3 else Plot.x // 100) + ", " + str(player.rect.y // 10 if Areas.area != -3 else Plot.y // 100), 20, 50, 300, BLACK)
         draw_color_text(screen, "背景: " + str(background_location_x // 10 if Areas.area != -3 else plot_background_location_x), 20, 50, 330, BLACK)
@@ -7254,27 +7323,28 @@ while running:
         if Quest.tracking == 2 and Quest_02.complete == False:
             draw_color_text(screen, "[黑暗勢力的威脅]", 30, 880, 200, GOLD)
             if search_item("生命水晶")["count"] == 0 and Area6.cata_open == False:
-                if Quest_02.stage == 15 and -2 < Areas.area < 4:
-                    draw_color_text(screen, "前往森林", 20, 900, 230, GOLD)
-                if Quest_02.stage == 15 and Areas.area == 4:
-                    draw_color_text(screen, "前往曙光之城廢墟", 20, 900, 230, GOLD)
-                if Quest_02.stage == 15 and Areas.area == 5:
-                    draw_color_text(screen, "尋找靈魂碎片", 20, 900, 230, GOLD)
-                if Quest_02.stage == 15 and Areas.area == 6:
-                    draw_color_text(screen, "前往曙光之城廢墟", 20, 900, 230, GOLD)
-                if Quest_02.stage == 15 and Areas.area == -6:
-                    draw_color_text(screen, "尋找靈魂碎片", 20, 900, 230, GOLD)
-                if Quest_02.stage == 15 and Areas.area == -5:
-                    draw_color_text(screen, "尋找靈魂碎片", 20, 900, 230, GOLD)
+                if Quest_02.stage == 15:
+                    if -2 < Areas.area < 4:
+                        draw_color_text(screen, "前往森林", 20, 900, 230, GOLD)
+                    if Areas.area == 4:
+                        draw_color_text(screen, "前往曙光之城廢墟", 20, 900, 230, GOLD)
+                    if Areas.area == 5:
+                        draw_color_text(screen, "尋找靈魂碎片", 20, 900, 230, GOLD)
+                    if Areas.area == 6:
+                        draw_color_text(screen, "前往曙光之城廢墟", 20, 900, 230, GOLD)
+                    if Areas.area == -6:
+                        draw_color_text(screen, "尋找靈魂碎片", 20, 900, 230, GOLD)
+                    if Areas.area == -5:
+                        draw_color_text(screen, "尋找靈魂碎片", 20, 900, 230, GOLD)
             if search_item("生命水晶")["count"] == 1 and Area6.cata_open == False:
                 if Quest_02.stage == 15:
                     draw_color_text(screen, "進入地下墓穴", 20, 900, 230, GOLD)
-            if Area6.cata_open:
-                if Quest_02.stage == 15 and Area9.first_beat_boss == True:
+            if Area6.cata_open and Quest_02.stage == 15:
+                if Area9.first_beat_boss:
                     draw_color_text(screen, "攻略地下墓穴", 20, 900, 230, GOLD)
-                if Quest_02.stage == 15 and search_item("生命水晶")["count"] > 0:
+                if search_item("生命水晶")["count"] > 0:
                     draw_color_text(screen, "前往下一區，用傳送門返回城鎮中心", 20, 840, 230, GOLD)
-            #快捷欄
+
     pygame.display.flip()
 
 pygame.quit()
